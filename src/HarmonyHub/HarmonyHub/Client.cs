@@ -259,7 +259,7 @@ namespace HarmonyHub
                                                 CurrentActivity = Config.Activity.First(x => x.Id == elem.FirstChild.FirstChild.Value.Split('=')[1]);
                                             break;
                                         case MimeTypes.Ping:
-                                            // TODO: What does a failed ping look like? Should we attempt to restablish a connection?
+                                            // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?
                                             if (!elem.InnerText.Contains("errorcode='200'"))
                                             {
                                                 CloseStream();
@@ -272,11 +272,12 @@ namespace HarmonyHub
                             break;
 
                         case "message":
-                            //stanzaQueue.Add(new Message(elem));
+                            // TODO: Determine how to respond to message stanzas from the Harmony Hub
+                            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.FirstChild.ToString()));
                             break;
 
                         case "presence":
-                            //stanzaQueue.Add(new Presence(elem));
+                            // TODO: Determine if Harmony Hub ever publishes presence stanzas
                             break;
                     }
                 }
