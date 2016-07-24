@@ -99,20 +99,8 @@ namespace HarmonyHub
             _username = username;
             _password = password;
 
-            // Get session token
-            _sessionToken = GetSessionToken(ip, username, password);
-            if (string.IsNullOrEmpty(_sessionToken))
-            {
-                throw new Exception("Could not get session token on Harmony Hub.");
-            }
-
-            _client = new TcpClient(ip, 5222);
-            _stream = _client.GetStream();
-            InitiateStream();
-
-            // Login with session token
-            LoginToHarmony(ip, _sessionToken);
-            Connected = true;
+            // Open stream
+            OpenStream();
 
             // Set up the listener and dispatcher tasks.
             Task.Factory.StartNew(ReadXmlStream, TaskCreationOptions.LongRunning);
@@ -270,8 +258,12 @@ namespace HarmonyHub
                                                 CurrentActivity = Config.Activity.First(x => x.Id == elem.FirstChild.FirstChild.Value.Split('=')[1]);
                                             break;
                                         case MimeTypes.Ping:
+                                            // TODO: What does a failed ping look like? Should we attempt to restablish a connection?
                                             if (!elem.InnerText.Contains("errorcode='200'"))
-                                                Close();
+                                            {
+                                                CloseStream();
+                                                OpenStream();
+                                            }
                                             break;
                                     }
                                 }
@@ -321,7 +313,7 @@ namespace HarmonyHub
 
             // Create a new parser instance.
             if (_parser != null)
-                _parser.Close();
+                _parser.Dispose();
 
             _parser = new StreamParser(_stream, true);
 
@@ -330,10 +322,36 @@ namespace HarmonyHub
         }
 
         /// <summary>
-		/// Closes the connection with the XMPP server. This automatically disposes of the object.
+        /// 
+        /// </summary>
+        private void OpenStream()
+        {
+            // Get session token
+            _sessionToken = GetSessionToken(_ip, _username, _password);
+            if (string.IsNullOrEmpty(_sessionToken))
+            {
+                throw new Exception("Could not get session token on Harmony Hub.");
+            }
+
+            if (_client == null)
+                _client = new TcpClient(_ip, 5222);
+
+            if (_stream == null)
+                _stream = _client.GetStream();
+
+            InitiateStream();
+
+            // Login with session token
+            LoginToHarmony(_ip, _sessionToken);
+            Connected = true;
+
+        }
+
+        /// <summary>
+		/// Closes the connection with the XMPP server.
 		/// </summary>
 		/// <exception cref="ObjectDisposedException">The XmppIm object has been disposed.</exception>
-		public void Close()
+		private void CloseStream()
         {
             if (_disposed)
                 throw new ObjectDisposedException(GetType().FullName);
@@ -345,7 +363,7 @@ namespace HarmonyHub
             // Close the XML stream.
             Send("</stream:stream>");
 
-            Dispose();
+            Connected = false;
         }
 
         #endregion
@@ -554,8 +572,16 @@ namespace HarmonyHub
                 // Get rid of managed resources.
                 if (disposing)
                 {
+                    CloseStream();
+
                     if (_heartbeat != null)
                         _heartbeat.Dispose();
+
+                    if (_parser != null)
+                        _parser.Dispose();
+
+                    if (_stream != null)
+                        _stream.Dispose();
 
                     if (_client != null)
                         _client.Close();

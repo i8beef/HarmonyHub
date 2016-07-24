@@ -129,14 +129,6 @@ namespace HarmonyHub
         }
 
         /// <summary>
-        /// Closes the stream parser.
-        /// </summary>
-        public void Close()
-        {
-            Dispose();
-        }
-
-        /// <summary>
         /// Reads the XML stream up to the 'stream:stream' opening tag.
         /// </summary>
         /// <exception cref="XmlException">The parser has encountered invalid

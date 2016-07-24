@@ -252,3 +252,4 @@ paket-files/
 *.sln.iml
 
 SafeSettings.config
+HarmonyHub.*.nupkg
