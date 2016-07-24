@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Configuration;
 using System.Linq;
 using System.Threading;
 
@@ -8,9 +9,9 @@ namespace HarmonyHub.TestClient
     {
         static void Main(string[] args)
         {
-            const string username = "REDACTED ";
-            const string password = "REDACTED";
-            const string ip = "REDACTED";
+            string username = ConfigurationManager.AppSettings["username"];
+            string password = ConfigurationManager.AppSettings["password"];
+            string ip = ConfigurationManager.AppSettings["ip"];
 
             using (var client = new Client(ip, username, password))
             {
