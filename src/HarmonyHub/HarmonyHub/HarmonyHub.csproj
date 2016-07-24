@@ -55,6 +55,10 @@
     <Compile Include="Config\RuleConfigElement.cs" />
     <Compile Include="Config\DeviceConfigElement.cs" />
     <Compile Include="Config\SequenceConfigElement.cs" />
+    <Compile Include="Events\MessageSentEventArgs.cs" />
+    <Compile Include="Events\MessageReceivedEventArgs.cs" />
+    <Compile Include="Events\CurrentActivityEventArgs.cs" />
+    <Compile Include="Events\ConfigUpdatedEventArgs.cs" />
     <Compile Include="GetUserAuthTokenResult.cs" />
     <Compile Include="MimeTypes.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

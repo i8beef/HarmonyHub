@@ -1,6 +1,6 @@
 ﻿using HarmonyHub.Config;
+using HarmonyHub.Events;
 using System;
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Timers;
 using System.Xml;
 
 namespace HarmonyHub
@@ -26,12 +27,13 @@ namespace HarmonyHub
         private NetworkStream _stream;
         private StreamParser _parser;
 
-        private string _sessionToken;
+        private Timer _heartbeat;
 
-        /// <summary>
-        /// A FIFO of stanzas waiting to be processed.
-        /// </summary>
-        //private BlockingCollection<Stanza> stanzaQueue = new BlockingCollection<Stanza>();
+        private string _sessionToken;
+        private HarmonyConfig _config;
+        private ActivityConfigElement _currentActivity;
+
+        private int _messageId = 0;
 
         /// <summary>
         /// Connected.
@@ -41,12 +43,35 @@ namespace HarmonyHub
         /// <summary>
         /// Current config cache.
         /// </summary>
-        public HarmonyConfig Config { get; set; }
+        public HarmonyConfig Config {
+            get { return _config; }
+            set {
+                _config = value;
+                ConfigUpdated?.Invoke(this, new ConfigUpdatedEventArgs(_config));
+            }
+        }
 
         /// <summary>
         /// Current active activity.
         /// </summary>
-        public string CurrentActivity { get; set; }
+        public ActivityConfigElement CurrentActivity {
+            get { return _currentActivity; }
+            set
+            {
+                _currentActivity = value;
+                CurrentActivityUpdated?.Invoke(this, new CurrentActivityEventArgs(_currentActivity));
+            }
+        }
+
+        /// <summary>
+        /// The event that is raised when the Config is updated.
+        /// </summary>
+        public event EventHandler<ConfigUpdatedEventArgs> ConfigUpdated;
+
+        /// <summary>
+        /// The event that is raised when CurrentActivity is updated.
+        /// </summary>
+        public event EventHandler<CurrentActivityEventArgs> CurrentActivityUpdated;
 
         /// <summary>
         /// The event that is raised when an unrecoverable error condition occurs.
@@ -54,19 +79,14 @@ namespace HarmonyHub
         public event EventHandler<ErrorEventArgs> Error;
 
         /// <summary>
-        /// The event that is raised when the Config is updated.
+        /// The event that is raised when messages are received.
         /// </summary>
-        //public event EventHandler<ConfigUpdatedEventArgs> ConfigUpdated;
+        public event EventHandler<MessageReceivedEventArgs> MessageReceived;
 
         /// <summary>
-        /// The event that is raised when CurrentActivity is updated.
+        /// The event that is raised when messages are sent.
         /// </summary>
-        //public event EventHandler<CurrentActivityEventArgs> CurrentActivityUpdated;
-
-        /// <summary>
-        /// The event that is raised when a Presence stanza has been received.
-        /// </summary>
-        //public event EventHandler<PresenceEventArgs> Presence;
+        public event EventHandler<MessageSentEventArgs> MessageSent;
 
         /// <summary>
         /// Constructor.
@@ -99,18 +119,25 @@ namespace HarmonyHub
                 throw new Exception("Could not get session token on Harmony Hub.");
             }
 
+            // Close old stream to authenticate on the new one
             Close();
+
             _client = new TcpClient(ip, 5222);
             _stream = _client.GetStream();
             InitiateStream();
 
             // Login with session tken
             LoginToHarmony(ip, _sessionToken);
-
             Connected = true;
 
             // Set up the listener and dispatcher tasks.
             Task.Factory.StartNew(ReadXmlStream, TaskCreationOptions.LongRunning);
+
+            // Enable keepalive
+            var _heartbeat = new Timer();
+            _heartbeat.Elapsed += new ElapsedEventHandler((o, e) => { SendPing(); });
+            _heartbeat.Interval = 30000;
+            _heartbeat.Enabled = true;
         }
 
         /// <summary>
@@ -120,7 +147,7 @@ namespace HarmonyHub
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", "1")
+                .Attr("id", _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.Config));
             Send(xml);
@@ -133,23 +160,9 @@ namespace HarmonyHub
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", "1")
+                .Attr("id", _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.CurrentActivity));
-            Send(xml);
-        }
-
-        /// <summary>
-        /// Send message to HarmonyHub to start an activity.
-        /// </summary>
-        public void StartActivity(string activityId)
-        {
-            var xml = Xml.Element("iq")
-                .Attr("type", "get")
-                .Attr("id", "1")
-                .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", MimeTypes.StartActivity)
-                    .Text("activityId=" + activityId + ":timestamp=0"));
             Send(xml);
         }
 
@@ -160,10 +173,38 @@ namespace HarmonyHub
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", "1")
+                .Attr("id", _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.DeviceCommand)
                     .Text("action=" + command.Replace(":", "::") + ":status=press"));
+            Send(xml);
+        }
+
+        /// <summary>
+        /// Sends a ping to HarmonyHub to keep connection alive.
+        /// </summary>
+        public void SendPing()
+        {
+            var xml = Xml.Element("iq")
+                .Attr("type", "get")
+                .Attr("id", _messageId.ToString())
+                .Child(Xml.Element("oa", "connect.logitech.com")
+                    .Attr("mime", MimeTypes.Ping)
+                    .Text("token=" + _sessionToken + ":name=foo#iOS8.3.0#iPhone"));
+            Send(xml);
+        }
+
+        /// <summary>
+        /// Send message to HarmonyHub to start an activity.
+        /// </summary>
+        public void StartActivity(string activityId)
+        {
+            var xml = Xml.Element("iq")
+                .Attr("type", "get")
+                .Attr("id", _messageId.ToString())
+                .Child(Xml.Element("oa", "connect.logitech.com")
+                    .Attr("mime", MimeTypes.StartActivity)
+                    .Text("activityId=" + activityId + ":timestamp=0"));
             Send(xml);
         }
 
@@ -248,7 +289,7 @@ namespace HarmonyHub
              */
             var authXml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", "1")
+                .Attr("id", _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", "vnd.logitech.connect/vnd.logitech.pair")
                     .Text("token=" + authToken + ":name=foo#iOS8.3.0#iPhone"));
@@ -382,6 +423,8 @@ namespace HarmonyHub
                 try
                 {
                     _stream.Write(buf, 0, buf.Length);
+                    _messageId++;
+                    MessageSent?.Invoke(this, new MessageSentEventArgs(xml));
                 }
                 catch (IOException e)
                 {
@@ -404,9 +447,8 @@ namespace HarmonyHub
                 {
                     XmlElement elem = _parser.NextElement("iq", "message", "presence");
 
-                    Console.WriteLine(elem.InnerText);
-
                     // Parse element and dispatch.
+                    MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.OuterXml));
                     switch (elem.Name)
                     {
                         case "iq":
@@ -420,12 +462,16 @@ namespace HarmonyHub
                                             Config = Newtonsoft.Json.JsonConvert.DeserializeObject<HarmonyConfig>(elem.FirstChild.FirstChild.Value);
                                             break;
                                         case MimeTypes.CurrentActivity:
-                                            CurrentActivity = Config.Activity.First(x => x.Id == elem.FirstChild.FirstChild.Value.Split('=')[1]).Label;
+                                            if (_config != null)
+                                                CurrentActivity = Config.Activity.First(x => x.Id == elem.FirstChild.FirstChild.Value.Split('=')[1]);
+                                            break;
+                                        case MimeTypes.Ping:
+                                            if (!elem.InnerText.Contains("errorcode='200'"))
+                                                Close();
                                             break;
                                     }
                                 }
                             }
-                            //stanzaQueue.Add(new Message(elem));
                             break;
 
                         case "message":
@@ -464,13 +510,23 @@ namespace HarmonyHub
         {
             if (_disposed)
                 throw new ObjectDisposedException(GetType().FullName);
+
+            // Kill heartbeat
+            if (_heartbeat != null)
+                _heartbeat.Enabled = false;
+
+            // Close the XML stream.
+            Send("</stream:stream>");
+
             Dispose();
         }
 
+        #region IDisposable implementation
+
         /// <summary>
-		/// Releases all resources used by the current instance of the XmppIm class.
-		/// </summary>
-		public void Dispose()
+        /// Releases all resources used by the current instance of the XmppIm class.
+        /// </summary>
+        public void Dispose()
         {
             Dispose(true);
             GC.SuppressFinalize(this);
@@ -492,11 +548,16 @@ namespace HarmonyHub
                 // Get rid of managed resources.
                 if (disposing)
                 {
+                    if (_heartbeat != null)
+                        _heartbeat.Dispose();
+
                     if (_client != null)
                         _client.Close();
                     _client = null;
                 }
             }
         }
+
+        #endregion
     }
 }
