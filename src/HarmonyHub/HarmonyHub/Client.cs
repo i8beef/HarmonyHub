@@ -26,14 +26,13 @@ namespace HarmonyHub
         private TcpClient _client;
         private NetworkStream _stream;
         private StreamParser _parser;
-
         private Timer _heartbeat;
 
         private string _sessionToken;
+        private int _messageId = 0;
+
         private HarmonyConfig _config;
         private ActivityConfigElement _currentActivity;
-
-        private int _messageId = 0;
 
         /// <summary>
         /// Connected.
@@ -100,33 +99,18 @@ namespace HarmonyHub
             _username = username;
             _password = password;
 
-            // Authenticate to Logitech
-            var authToken = LoginToLogitech(username, password);
-            if (string.IsNullOrEmpty(authToken))
-            {
-                throw new Exception("Could not get token from Logitech server.");
-            }
-
-            // Establish TCP connection
-            _client = new TcpClient(ip, 5222);
-            _stream = _client.GetStream();
-            InitiateStream();
-
             // Get session token
-            _sessionToken = GetSessionToken(ip, authToken);
+            _sessionToken = GetSessionToken(ip, username, password);
             if (string.IsNullOrEmpty(_sessionToken))
             {
                 throw new Exception("Could not get session token on Harmony Hub.");
             }
 
-            // Close old stream to authenticate on the new one
-            Close();
-
             _client = new TcpClient(ip, 5222);
             _stream = _client.GetStream();
             InitiateStream();
 
-            // Login with session tken
+            // Login with session token
             LoginToHarmony(ip, _sessionToken);
             Connected = true;
 
@@ -134,7 +118,7 @@ namespace HarmonyHub
             Task.Factory.StartNew(ReadXmlStream, TaskCreationOptions.LongRunning);
 
             // Enable keepalive
-            var _heartbeat = new Timer();
+            _heartbeat = new Timer();
             _heartbeat.Elapsed += new ElapsedEventHandler((o, e) => { SendPing(); });
             _heartbeat.Interval = 30000;
             _heartbeat.Enabled = true;
@@ -206,186 +190,6 @@ namespace HarmonyHub
                     .Attr("mime", MimeTypes.StartActivity)
                     .Text("activityId=" + activityId + ":timestamp=0"));
             Send(xml);
-        }
-
-        /// <summary>
-        /// Initiates the stream.
-        /// </summary>
-        private void InitiateStream()
-        {
-            // Stream initialization request
-            var xml = Xml.Element("stream:stream", "jabber:client")
-                .Attr("to", "connect.logitech.com")
-                .Attr("version", "1.0")
-                .Attr("xmlns:stream", "http://etherx.jabber.org/streams")
-                .Attr("xml:lang", CultureInfo.CurrentCulture.Name);
-            Send(xml.ToXmlString(xmlDeclaration: true, leaveOpen: true));
-
-            // Create a new parser instance.
-            if (_parser != null)
-                _parser.Close();
-
-            _parser = new StreamParser(_stream, true);
-
-            // The first element of the stream must be <stream:features>.
-            var features = _parser.NextElement("stream:features");
-        }
-
-        /// <summary>
-        /// Initiates the stream.
-        /// </summary>
-        private void ReInitiateStream()
-        {
-            // Stream initialization request
-            var xml = Xml.Element("stream:stream", "jabber:client")
-                .Attr("to", "connect.logitech.com")
-                .Attr("version", "1.0")
-                .Attr("xmlns:stream", "http://etherx.jabber.org/streams")
-                .Attr("xml:lang", CultureInfo.CurrentCulture.Name);
-            Send(xml.ToXmlString(xmlDeclaration: false, leaveOpen: true));
-
-            // Create a new parser instance.
-            if (_parser != null)
-                _parser.Close();
-
-            _parser = new StreamParser(_stream, true);
-
-            // The first element of the stream must be <stream:features>.
-            var features = _parser.NextElement("stream:features");
-        }
-
-        /// <summary>
-        /// Gets the session token for the supplied Logitech auth token.
-        /// </summary>
-        /// <param name="ip">IP address of the Harmony Hub.</param>
-        /// <param name="authToken">Logitech auth token.</param>
-        /// <returns>Harmony session token.</returns>
-        private string GetSessionToken(string ip, string authToken)
-        {
-            // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>AGd1ZXN0QHguY29tAGd1ZXN0</auth>
-            var saslXml = Xml.Element("auth", "urn:ietf:params:xml:ns:xmpp-sasl")
-                .Attr("mechanism", "PLAIN")
-                .Text(Convert.ToBase64String(Encoding.UTF8.GetBytes("\0" + "guest@x.com" + "\0" + "guest")));
-            Send(saslXml);
-
-            // Handle response
-            while (true)
-            {
-                XmlElement ret = _parser.NextElement("challenge", "success", "failure");
-
-                if (ret.Name == "failure")
-                    throw new Exception("SASL authentication failed.");
-
-                if (ret.Name == "success")
-                    break;
-            }
-
-            /*
-             * <iq type="get" id="3174962747" from="guest">
-             *   <oa xmlns="connect.logitech.com" mime="vnd.logitech.connect/vnd.logitech.pair">
-             *     token=y6jZtSuYYOoQ2XXiU9cYovqtT+cCbcyjhWqGbhQsLV/mWi4dJVglFEBGpm08OjCW:name=SOMEID#iOS6.0.1#iPhone
-             *   </oa>
-             * </iq>
-             */
-            var authXml = Xml.Element("iq")
-                .Attr("type", "get")
-                .Attr("id", _messageId.ToString())
-                .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", "vnd.logitech.connect/vnd.logitech.pair")
-                    .Text("token=" + authToken + ":name=foo#iOS8.3.0#iPhone"));
-            Send(authXml);
-
-            // Handle response
-            while (true)
-            {
-                XmlElement ret = _parser.NextElement("iq");
-                if (ret.Name == "iq")
-                {
-                    if (ret.FirstChild != null && ret.FirstChild.Name == "oa")
-                    {
-                        if (ret.FirstChild.InnerXml.Contains("status=succeeded"))
-                        {
-                            const string identityRegEx = "identity=([A-Z0-9]{8}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{12}):status";
-                            var regex = new Regex(identityRegEx, RegexOptions.IgnoreCase | RegexOptions.Singleline);
-                            var match = regex.Match(ret.FirstChild.InnerXml);
-                            if (match.Success)
-                            {
-                                return match.Groups[1].ToString();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Logs into Harmony device with the supplied session token.
-        /// </summary>
-        /// <param name="ip">IP address of the Harmony Hub.</param>
-        /// <param name="sessionToken">HarmonyHub session token.</param>
-        /// <returns>Harmony session token.</returns>
-        private void LoginToHarmony(string ip, string sessionToken)
-        {
-            //ReInitiateStream();
-
-            // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>AGd1ZXN0QHguY29tAGd1ZXN0</auth>
-            var saslXml = Xml.Element("auth", "urn:ietf:params:xml:ns:xmpp-sasl")
-                .Attr("mechanism", "PLAIN")
-                .Text(Convert.ToBase64String(Encoding.UTF8.GetBytes("\0" + sessionToken + "\0" + sessionToken)));
-            Send(saslXml);
-
-            // Handle response
-            while (true)
-            {
-                XmlElement ret = _parser.NextElement("challenge", "success", "failure");
-
-                if (ret.Name == "failure")
-                    throw new Exception("SASL authentication failed.");
-
-                if (ret.Name == "success")
-                    break;
-            }
-
-            ReInitiateStream();
-        }
-
-        /// <summary>
-        /// Logs into Logitech endpoint and retrieves an "auth token"
-        /// </summary>
-        /// <param name="username">Username to authenticate with.</param>
-        /// <param name="password">Password to authenticate with.</param>
-        /// <returns>Logitech auth token.</returns>
-        private static string LoginToLogitech(string username, string password)
-        {
-            const string logitechAuthUrl = "https://svcs.myharmony.com/CompositeSecurityServices/Security.svc/json/GetUserAuthToken";
-
-            var httpWebRequest = (HttpWebRequest)WebRequest.Create(logitechAuthUrl);
-            httpWebRequest.ContentType = "text/json";
-            httpWebRequest.Method = "POST";
-
-            using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
-            {
-                var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
-                {
-                    email = username,
-                    password
-                });
-
-                streamWriter.Write(json);
-                streamWriter.Flush();
-            }
-
-            var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
-
-            var responseStream = httpResponse.GetResponseStream();
-            if (responseStream == null) return null;
-
-            using (var streamReader = new StreamReader(responseStream))
-            {
-                var result = streamReader.ReadToEnd();
-                var harmonyData = Newtonsoft.Json.JsonConvert.DeserializeObject<GetUserAuthTokenResultRootObject>(result);
-                return harmonyData.GetUserAuthTokenResult.UserAuthToken;
-            }
         }
 
         /// <summary>
@@ -500,12 +304,35 @@ namespace HarmonyHub
             }
         }
 
+        #region Client Init and Close
+
         /// <summary>
-		/// Closes the connection with the XMPP server. This automatically disposes
-		/// of the object.
+        /// Initiates the stream.
+        /// </summary>
+        private void InitiateStream()
+        {
+            // Stream initialization request
+            var xml = Xml.Element("stream:stream", "jabber:client")
+                .Attr("to", "connect.logitech.com")
+                .Attr("version", "1.0")
+                .Attr("xmlns:stream", "http://etherx.jabber.org/streams")
+                .Attr("xml:lang", CultureInfo.CurrentCulture.Name);
+            Send(xml.ToXmlString(xmlDeclaration: true, leaveOpen: true));
+
+            // Create a new parser instance.
+            if (_parser != null)
+                _parser.Close();
+
+            _parser = new StreamParser(_stream, true);
+
+            // The first element of the stream must be <stream:features>.
+            var features = _parser.NextElement("stream:features");
+        }
+
+        /// <summary>
+		/// Closes the connection with the XMPP server. This automatically disposes of the object.
 		/// </summary>
-		/// <exception cref="ObjectDisposedException">The XmppIm object has been
-		/// disposed.</exception>
+		/// <exception cref="ObjectDisposedException">The XmppIm object has been disposed.</exception>
 		public void Close()
         {
             if (_disposed)
@@ -520,6 +347,185 @@ namespace HarmonyHub
 
             Dispose();
         }
+
+        #endregion
+
+        #region Authentication and Authorization
+
+        /// <summary>
+        /// Gets the session token for the supplied Logitech username and password.
+        /// </summary>
+        /// <param name="ip">IP address of the Harmony Hub.</param>
+        /// <param name="username">Username.</param>
+        /// <param name="password">Passwprd.</param>
+        /// <returns>Harmony session token.</returns>
+        private string GetSessionToken(string ip, string username, string password)
+        {
+            var sessionToken = "";
+
+            // Authenticate to Logitech
+            var authToken = LoginToLogitech(username, password);
+            if (string.IsNullOrEmpty(authToken))
+            {
+                throw new Exception("Could not get token from Logitech server.");
+            }
+
+            // Swap auth token for a session token
+            using (var authClient = new TcpClient(ip, 5222))
+            {
+                using (var authStream = authClient.GetStream())
+                {
+                    // Initialize stream
+                    var streamXml = Xml.Element("stream:stream", "jabber:client")
+                        .Attr("to", "connect.logitech.com")
+                        .Attr("version", "1.0")
+                        .Attr("xmlns:stream", "http://etherx.jabber.org/streams")
+                        .Attr("xml:lang", CultureInfo.CurrentCulture.Name);
+                    byte[] streamBuffer = Encoding.UTF8.GetBytes(streamXml.ToXmlString(xmlDeclaration: true, leaveOpen: true));
+                    authStream.Write(streamBuffer, 0, streamBuffer.Length);
+
+                    // Begin reading auth stream
+                    using (var authParser = new StreamParser(authStream, true))
+                    {
+                        // The first element of the stream must be <stream:features>.
+                        var features = authParser.NextElement("stream:features");
+
+                        // Auth as guest
+                        // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>AGd1ZXN0QHguY29tAGd1ZXN0</auth>
+                        var saslXml = Xml.Element("auth", "urn:ietf:params:xml:ns:xmpp-sasl")
+                            .Attr("mechanism", "PLAIN")
+                            .Text(Convert.ToBase64String(Encoding.UTF8.GetBytes("\0" + "guest@x.com" + "\0" + "guest")));
+                        byte[] saslBuffer = Encoding.UTF8.GetBytes(saslXml.ToXmlString());
+                        authStream.Write(saslBuffer, 0, saslBuffer.Length);
+
+                        // Handle response
+                        while (true)
+                        {
+                            if (authParser.NextElement("challenge", "success", "failure").Name != "success")
+                                throw new Exception("SASL authentication failed.");
+
+                            break;
+                        }
+
+                        // Swap the authToken for a sessionToken on the Harmony Hub
+                        /*
+                         * <iq type="get" id="3174962747" from="guest">
+                         *   <oa xmlns="connect.logitech.com" mime="vnd.logitech.connect/vnd.logitech.pair">
+                         *     token=y6jZtSuYYOoQ2XXiU9cYovqtT+cCbcyjhWqGbhQsLV/mWi4dJVglFEBGpm08OjCW:name=SOMEID#iOS6.0.1#iPhone
+                         *   </oa>
+                         * </iq>
+                         */
+                        var swapXml = Xml.Element("iq")
+                            .Attr("type", "get")
+                            .Attr("id", _messageId.ToString())
+                            .Child(Xml.Element("oa", "connect.logitech.com")
+                                .Attr("mime", "vnd.logitech.connect/vnd.logitech.pair")
+                                .Text("token=" + authToken + ":name=foo#iOS8.3.0#iPhone"));
+                        byte[] swapBuffer = Encoding.UTF8.GetBytes(swapXml.ToXmlString());
+                        authStream.Write(swapBuffer, 0, swapBuffer.Length);
+
+                        // Handle response
+                        while (true)
+                        {
+                            XmlElement ret = authParser.NextElement("iq");
+                            if (ret.Name == "iq")
+                            {
+                                if (ret.FirstChild != null && ret.FirstChild.Name == "oa")
+                                {
+                                    if (ret.FirstChild.InnerXml.Contains("status=succeeded"))
+                                    {
+                                        const string identityRegEx = "identity=([A-Z0-9]{8}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{12}):status";
+                                        var regex = new Regex(identityRegEx, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                                        var match = regex.Match(ret.FirstChild.InnerXml);
+                                        if (match.Success)
+                                        {
+                                            sessionToken = match.Groups[1].ToString();
+                                            break;
+                                        }
+                                        else
+                                        {
+                                            throw new Exception("AuthToken swap failed.");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Kill stream
+                    byte[] killBuffer = Encoding.UTF8.GetBytes("</stream:stream>");
+                    authStream.Write(killBuffer, 0, killBuffer.Length);
+                }
+            }
+
+            return sessionToken;
+        }
+
+        /// <summary>
+        /// Logs into Harmony device with the supplied session token.
+        /// </summary>
+        /// <param name="ip">IP address of the Harmony Hub.</param>
+        /// <param name="sessionToken">HarmonyHub session token.</param>
+        /// <returns>Harmony session token.</returns>
+        private void LoginToHarmony(string ip, string sessionToken)
+        {
+            // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>Base64EncodedValue</auth>
+            var saslXml = Xml.Element("auth", "urn:ietf:params:xml:ns:xmpp-sasl")
+                .Attr("mechanism", "PLAIN")
+                .Text(Convert.ToBase64String(Encoding.UTF8.GetBytes("\0" + sessionToken + "\0" + sessionToken)));
+            Send(saslXml);
+
+            // Handle response
+            while (true)
+            {
+                if (_parser.NextElement("challenge", "success", "failure").Name != "success")
+                    throw new Exception("SASL authentication failed.");
+
+                break;
+            }
+        }
+
+        /// <summary>
+        /// Logs into Logitech endpoint and retrieves an "auth token"
+        /// </summary>
+        /// <param name="username">Username to authenticate with.</param>
+        /// <param name="password">Password to authenticate with.</param>
+        /// <returns>Logitech auth token.</returns>
+        private static string LoginToLogitech(string username, string password)
+        {
+            const string logitechAuthUrl = "https://svcs.myharmony.com/CompositeSecurityServices/Security.svc/json/GetUserAuthToken";
+
+            var httpWebRequest = (HttpWebRequest)WebRequest.Create(logitechAuthUrl);
+            httpWebRequest.ContentType = "text/json";
+            httpWebRequest.Method = "POST";
+
+            using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
+            {
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    email = username,
+                    password
+                });
+
+                streamWriter.Write(json);
+                streamWriter.Flush();
+            }
+
+            var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
+
+            var responseStream = httpResponse.GetResponseStream();
+            if (responseStream == null)
+                return null;
+
+            using (var streamReader = new StreamReader(responseStream))
+            {
+                var result = streamReader.ReadToEnd();
+                var harmonyData = Newtonsoft.Json.JsonConvert.DeserializeObject<GetUserAuthTokenResultRootObject>(result);
+                return harmonyData.GetUserAuthTokenResult.UserAuthToken;
+            }
+        }
+
+        #endregion
 
         #region IDisposable implementation
 
