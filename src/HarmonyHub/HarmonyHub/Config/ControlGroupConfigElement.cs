@@ -1,7 +1,9 @@
 ﻿using System.Collections.Generic;
+using System.Runtime.Serialization;
 
 namespace HarmonyHub.Config
 {
+    [DataContract]
     public class ControlGroupConfigElement
     {
         public ControlGroupConfigElement()
@@ -9,7 +11,10 @@ namespace HarmonyHub.Config
             Function = new List<FunctionConfigElement>();
         }
 
+        [DataMember(Name = "name")]
         public string Name { get; set; }
+
+        [DataMember(Name = "function")]
         public IList<FunctionConfigElement> Function { get; set; }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using HarmonyHub.Config;
 using HarmonyHub.Events;
+using HarmonyHub.LogitechDataContracts;
 using System;
 using System.Globalization;
 using System.IO;
@@ -251,7 +252,7 @@ namespace HarmonyHub
                                     switch(elem.FirstChild.Attributes["mime"].Value)
                                     {
                                         case MimeTypes.Config:
-                                            Config = Newtonsoft.Json.JsonConvert.DeserializeObject<HarmonyConfig>(elem.FirstChild.FirstChild.Value);
+                                            Config = JsonSerializer<HarmonyConfig>.Deserialize(elem.FirstChild.FirstChild.Value);
                                             break;
                                         case MimeTypes.CurrentActivity:
                                             if (_config != null)
@@ -519,11 +520,7 @@ namespace HarmonyHub
 
             using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
             {
-                var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
-                {
-                    email = username,
-                    password
-                });
+                var json = JsonSerializer<GetUserAuthTokenRequest>.Serialize(new GetUserAuthTokenRequest { Email = username, Password = password });
 
                 streamWriter.Write(json);
                 streamWriter.Flush();
@@ -538,7 +535,7 @@ namespace HarmonyHub
             using (var streamReader = new StreamReader(responseStream))
             {
                 var result = streamReader.ReadToEnd();
-                var harmonyData = Newtonsoft.Json.JsonConvert.DeserializeObject<GetUserAuthTokenResultRootObject>(result);
+                var harmonyData = JsonSerializer<GetUserAuthTokenResultRootObject>.Deserialize(result);
                 return harmonyData.GetUserAuthTokenResult.UserAuthToken;
             }
         }
