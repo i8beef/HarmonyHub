@@ -93,11 +93,19 @@ namespace HarmonyHub
             InitiateStream();
 
             // Get session token
-            _sessionToken = LoginToHarmony(ip, authToken);
+            _sessionToken = GetSessionToken(ip, authToken);
             if (string.IsNullOrEmpty(_sessionToken))
             {
                 throw new Exception("Could not get session token on Harmony Hub.");
             }
+
+            Close();
+            _client = new TcpClient(ip, 5222);
+            _stream = _client.GetStream();
+            InitiateStream();
+
+            // Login with session tken
+            LoginToHarmony(ip, _sessionToken);
 
             Connected = true;
 
@@ -128,6 +136,34 @@ namespace HarmonyHub
                 .Attr("id", "1")
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.CurrentActivity));
+            Send(xml);
+        }
+
+        /// <summary>
+        /// Send message to HarmonyHub to start an activity.
+        /// </summary>
+        public void StartActivity(string activityId)
+        {
+            var xml = Xml.Element("iq")
+                .Attr("type", "get")
+                .Attr("id", "1")
+                .Child(Xml.Element("oa", "connect.logitech.com")
+                    .Attr("mime", MimeTypes.StartActivity)
+                    .Text("activityId=" + activityId + ":timestamp=0"));
+            Send(xml);
+        }
+
+        /// <summary>
+        /// Send command to the HarmonyHub.
+        /// </summary>
+        public void SendCommand(string command)
+        {
+            var xml = Xml.Element("iq")
+                .Attr("type", "get")
+                .Attr("id", "1")
+                .Child(Xml.Element("oa", "connect.logitech.com")
+                    .Attr("mime", MimeTypes.DeviceCommand)
+                    .Text("action=" + command.Replace(":", "::") + ":status=press"));
             Send(xml);
         }
 
@@ -178,12 +214,12 @@ namespace HarmonyHub
         }
 
         /// <summary>
-        /// Logs into Harmony device with the supplied Logitech auth token.
+        /// Gets the session token for the supplied Logitech auth token.
         /// </summary>
         /// <param name="ip">IP address of the Harmony Hub.</param>
         /// <param name="authToken">Logitech auth token.</param>
         /// <returns>Harmony session token.</returns>
-        private string LoginToHarmony(string ip, string authToken)
+        private string GetSessionToken(string ip, string authToken)
         {
             // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>AGd1ZXN0QHguY29tAGd1ZXN0</auth>
             var saslXml = Xml.Element("auth", "urn:ietf:params:xml:ns:xmpp-sasl")
@@ -202,8 +238,6 @@ namespace HarmonyHub
                 if (ret.Name == "success")
                     break;
             }
-
-            //ReInitiateStream();
 
             /*
              * <iq type="get" id="3174962747" from="guest">
@@ -241,6 +275,37 @@ namespace HarmonyHub
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Logs into Harmony device with the supplied session token.
+        /// </summary>
+        /// <param name="ip">IP address of the Harmony Hub.</param>
+        /// <param name="sessionToken">HarmonyHub session token.</param>
+        /// <returns>Harmony session token.</returns>
+        private void LoginToHarmony(string ip, string sessionToken)
+        {
+            //ReInitiateStream();
+
+            // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>AGd1ZXN0QHguY29tAGd1ZXN0</auth>
+            var saslXml = Xml.Element("auth", "urn:ietf:params:xml:ns:xmpp-sasl")
+                .Attr("mechanism", "PLAIN")
+                .Text(Convert.ToBase64String(Encoding.UTF8.GetBytes("\0" + sessionToken + "\0" + sessionToken)));
+            Send(saslXml);
+
+            // Handle response
+            while (true)
+            {
+                XmlElement ret = _parser.NextElement("challenge", "success", "failure");
+
+                if (ret.Name == "failure")
+                    throw new Exception("SASL authentication failed.");
+
+                if (ret.Name == "success")
+                    break;
+            }
+
+            ReInitiateStream();
         }
 
         /// <summary>
@@ -338,6 +403,8 @@ namespace HarmonyHub
                 while (true)
                 {
                     XmlElement elem = _parser.NextElement("iq", "message", "presence");
+
+                    Console.WriteLine(elem.InnerText);
 
                     // Parse element and dispatch.
                     switch (elem.Name)
