@@ -67,8 +67,8 @@ right names is to examine the Config object you get from the Harmony Hub.
 
         /*
          * Requests that the Harmony Hub send the current active Activity. This is basically the only real "state" that the
-         * Harmony Hub has. This call is Dependent in the Config object being populated, as the Harmony Hub only sends back 
-         * an ID that just be looked up in the Config to get the actual Name of the activity, etc.
+         * Harmony Hub has. This call is dependent on the Config object being populated, as the Harmony Hub only sends back 
+         * an ID that needs to be looked up in the Config to get the actual Name of the activity, etc.
          *
          * As such, given the above warning about the config object not being populated immediately after the RequestConfig() call,
          * if you actually try this example it will fail. This call is more appropriate (a) in a ConfigUpdated event handler, 
