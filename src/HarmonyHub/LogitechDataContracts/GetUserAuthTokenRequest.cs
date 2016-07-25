@@ -6,7 +6,7 @@ namespace HarmonyHub.LogitechDataContracts
     /// Request call to myharmony.com web service.
     /// </summary>
     [DataContract]
-    public class GetUserAuthTokenRequest
+    internal class GetUserAuthTokenRequest
     {
         [DataMember(Name = "email")]
         public string Email { get; set; }

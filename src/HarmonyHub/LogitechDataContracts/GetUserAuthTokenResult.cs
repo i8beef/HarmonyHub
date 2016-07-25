@@ -7,7 +7,7 @@ namespace HarmonyHub.LogitechDataContracts
     /// AccountId is always (so far) 0.
     /// </summary>
     [DataContract]
-    public class GetUserAuthTokenResult
+    internal class GetUserAuthTokenResult
     {
         [DataMember(Name = "AccountId")]
         public int AccountId { get; set; }
@@ -17,7 +17,7 @@ namespace HarmonyHub.LogitechDataContracts
     }
 
     [DataContract]
-    public class GetUserAuthTokenResultRootObject
+    internal class GetUserAuthTokenResultRootObject
     {
         [DataMember(Name = "GetUserAuthTokenResult")]
         public GetUserAuthTokenResult GetUserAuthTokenResult { get; set; }

@@ -105,8 +105,6 @@ namespace HarmonyHub
             // Open stream
             OpenStream();
 
-            InitializeConfig(10);
-
             // Set up the listener and dispatcher tasks.
             Task.Factory.StartNew(ReadXmlStream, TaskCreationOptions.LongRunning);
 
@@ -115,6 +113,8 @@ namespace HarmonyHub
             _heartbeat.Elapsed += new ElapsedEventHandler((o, e) => { SendPing(); });
             _heartbeat.Interval = 30000;
             _heartbeat.Enabled = true;
+
+            InitializeConfig(10);
         }
 
         /// <summary>
@@ -273,15 +273,15 @@ namespace HarmonyHub
                                 switch (oaMimeType)
                                 {
                                     case MimeTypes.Config:
-                                        Config = JsonSerializer<HarmonyConfig>.Deserialize(oa.Value);
+                                        Config = JsonSerializer<HarmonyConfig>.Deserialize(oa.InnerText);
                                         break;
                                     case MimeTypes.CurrentActivity:
                                         if (_config != null)
-                                            CurrentActivity = Config.Activity.First(x => x.Id == oa.Value.Split('=')[1]);
+                                            CurrentActivity = Config.Activity.First(x => x.Id == oa.InnerText.Split('=')[1]);
                                         break;
                                     case MimeTypes.StartActivity:
                                         if (_config != null)
-                                            CurrentActivity = Config.Activity.First(x => x.Id == oa.Value.Split('=')[1]);
+                                            CurrentActivity = Config.Activity.First(x => x.Id == oa.InnerText.Split('=')[1]);
                                         break;
                                     case MimeTypes.Ping:
                                         // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?

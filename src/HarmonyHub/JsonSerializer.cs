@@ -4,7 +4,7 @@ using System.Runtime.Serialization.Json;
 
 namespace HarmonyHub
 {
-    public static class JsonSerializer<TType> where TType : class
+    internal static class JsonSerializer<TType> where TType : class
     {
         /// <summary>
         /// Serializes an object to JSON
