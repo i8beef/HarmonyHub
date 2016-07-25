@@ -9,6 +9,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Xml;
@@ -27,7 +28,7 @@ namespace HarmonyHub
         private TcpClient _client;
         private NetworkStream _stream;
         private StreamParser _parser;
-        private Timer _heartbeat;
+        private System.Timers.Timer _heartbeat;
 
         private string _sessionToken;
         private string _clientId;
@@ -104,11 +105,13 @@ namespace HarmonyHub
             // Open stream
             OpenStream();
 
+            InitializeConfig(10);
+
             // Set up the listener and dispatcher tasks.
             Task.Factory.StartNew(ReadXmlStream, TaskCreationOptions.LongRunning);
 
             // Enable keepalive
-            _heartbeat = new Timer();
+            _heartbeat = new System.Timers.Timer();
             _heartbeat.Elapsed += new ElapsedEventHandler((o, e) => { SendPing(); });
             _heartbeat.Interval = 30000;
             _heartbeat.Enabled = true;
@@ -155,6 +158,24 @@ namespace HarmonyHub
         }
 
         /// <summary>
+        /// Send message to HarmonyHub to start a given activity
+        /// </summary>
+        /// <remarks>
+        /// Send "-1" to trigger turning off.
+        /// </remarks>
+        /// <param name="activityId">The id of the activity to activate.</param>
+        public void StartActivity(int activityId)
+        {
+            var xml = Xml.Element("iq")
+                .Attr("type", "get")
+                .Attr("id", _clientId + "_" + _messageId.ToString())
+                .Child(Xml.Element("oa", "connect.logitech.com")
+                    .Attr("mime", MimeTypes.StartActivity)
+                    .Text(string.Format("activityId={0}:timestamp=0", activityId)));
+            Send(xml);
+        }
+
+        /// <summary>
         /// Sends a ping to HarmonyHub to keep connection alive.
         /// </summary>
         public void SendPing()
@@ -163,8 +184,7 @@ namespace HarmonyHub
                 .Attr("type", "get")
                 .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", MimeTypes.Ping)
-                    .Text("token=" + _sessionToken + ":name=foo#iOS8.3.0#iPhone"));
+                    .Attr("mime", MimeTypes.Ping));
             Send(xml);
         }
 
@@ -240,68 +260,46 @@ namespace HarmonyHub
                 while (true)
                 {
                     XmlElement elem = _parser.NextElement("iq", "message", "presence");
+                    MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.OuterXml));
 
                     // Parse element and dispatch.
-                    MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.OuterXml));
                     switch (elem.Name)
                     {
                         case "iq":
-                            if (elem.FirstChild != null)
+                            var oa = elem.FirstChild;
+                            if (oa != null && oa.Name == "oa")
                             {
-                                if (elem.FirstChild.Name == "oa")
+                                var oaMimeType = oa.Attributes["mime"]?.Value;
+                                switch (oaMimeType)
                                 {
-                                    switch(elem.FirstChild.Attributes["mime"].Value)
-                                    {
-                                        case MimeTypes.Config:
-                                            Config = JsonSerializer<HarmonyConfig>.Deserialize(elem.FirstChild.FirstChild.Value);
-                                            break;
-                                        case MimeTypes.CurrentActivity:
-                                            if (_config != null)
-                                                CurrentActivity = Config.Activity.First(x => x.Id == elem.FirstChild.FirstChild.Value.Split('=')[1]);
-                                            break;
-                                        case MimeTypes.Ping:
-                                            // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?
-                                            if (!elem.InnerText.Contains("errorcode='200'"))
-                                            {
-                                                CloseStream();
-                                                OpenStream();
-                                            }
-                                            break;
-                                    }
+                                    case MimeTypes.Config:
+                                        Config = JsonSerializer<HarmonyConfig>.Deserialize(oa.Value);
+                                        break;
+                                    case MimeTypes.CurrentActivity:
+                                        if (_config != null)
+                                            CurrentActivity = Config.Activity.First(x => x.Id == oa.Value.Split('=')[1]);
+                                        break;
+                                    case MimeTypes.StartActivity:
+                                        if (_config != null)
+                                            CurrentActivity = Config.Activity.First(x => x.Id == oa.Value.Split('=')[1]);
+                                        break;
+                                    case MimeTypes.Ping:
+                                        // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?
+                                        if (!elem.InnerText.Contains("errorcode='200'"))
+                                        {
+                                            CloseStream();
+                                            OpenStream();
+                                        }
+                                        break;
+                                    default:
+                                        Error?.Invoke(this, new ErrorEventArgs(new Exception("Unrecognized iq stanza mime type received: oaMimeType")));
+                                        break;
                                 }
                             }
                             break;
-
                         case "message":
                             // TODO: Determine how to respond to message stanzas from the Harmony Hub
-                            if (elem.FirstChild != null)
-                            {
-                                if (elem.FirstChild.Name == "oa")
-                                {
-                                    switch (elem.FirstChild.Attributes["mime"].Value)
-                                    {
-                                        case MimeTypes.Config:
-                                            Config = JsonSerializer<HarmonyConfig>.Deserialize(elem.FirstChild.FirstChild.Value);
-                                            break;
-                                        case MimeTypes.CurrentActivity:
-                                            if (_config != null)
-                                                CurrentActivity = Config.Activity.First(x => x.Id == elem.FirstChild.FirstChild.Value.Split('=')[1]);
-                                            break;
-                                        case MimeTypes.Ping:
-                                            // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?
-                                            if (!elem.InnerText.Contains("errorcode='200'"))
-                                            {
-                                                CloseStream();
-                                                OpenStream();
-                                            }
-                                            break;
-                                    }
-                                }
-                            }
-
-                            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.FirstChild.ToString()));
                             break;
-
                         case "presence":
                             // TODO: Determine if Harmony Hub ever publishes presence stanzas
                             break;
@@ -374,6 +372,42 @@ namespace HarmonyHub
             // Login with session token
             LoginToHarmony(_ip, _sessionToken);
             Connected = true;
+        }
+
+        /// <summary>
+        /// Poor mans config initializer.
+        /// </summary>
+        /// <param name="timeout">Timeout in seconds for each call</param>
+        private void InitializeConfig(int timeout)
+        {
+            if (!Connected)
+                throw new Exception("Cannot refresh config while disconnected.");
+
+            // Reset these to ensure blocking until refresh is complete
+            Config = null;
+            CurrentActivity = null;
+
+            RequestConfig();
+            var startTime = DateTime.Now;
+            while (Config == null && (DateTime.Now - startTime).Seconds < timeout) {
+                // TODO: This is probably evil here
+                Thread.Sleep(50);
+            }
+
+            // Error occured
+            if ((DateTime.Now - startTime).Seconds >= timeout)
+                throw new Exception("Error occurred initializing config");
+
+            RequestCurrentActivity();
+            startTime = DateTime.Now;
+            while (CurrentActivity == null && (DateTime.Now - startTime).Seconds < timeout) {
+                // TODO: This is probably evil here
+                Thread.Sleep(50);
+            }
+
+            // Error occured (What does this do when there is no current activity?)
+            if ((DateTime.Now - startTime).Seconds >= timeout)
+                throw new Exception("Error occurred getting current activity");
         }
 
         /// <summary>
