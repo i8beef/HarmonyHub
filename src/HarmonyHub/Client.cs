@@ -30,7 +30,8 @@ namespace HarmonyHub
         private Timer _heartbeat;
 
         private string _sessionToken;
-        private int _messageId = 0;
+        private string _clientId;
+        private int _messageId = 1;
 
         private HarmonyConfig _config;
         private ActivityConfigElement _currentActivity;
@@ -120,7 +121,7 @@ namespace HarmonyHub
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", _messageId.ToString())
+                .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.Config));
             Send(xml);
@@ -133,7 +134,7 @@ namespace HarmonyHub
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", _messageId.ToString())
+                .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.CurrentActivity));
             Send(xml);
@@ -146,7 +147,7 @@ namespace HarmonyHub
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", _messageId.ToString())
+                .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.DeviceCommand)
                     .Text("action=" + command.Replace(":", "::") + ":status=press"));
@@ -160,7 +161,7 @@ namespace HarmonyHub
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", _messageId.ToString())
+                .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.Ping)
                     .Text("token=" + _sessionToken + ":name=foo#iOS8.3.0#iPhone"));
@@ -174,7 +175,7 @@ namespace HarmonyHub
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
-                .Attr("id", _messageId.ToString())
+                .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", MimeTypes.StartActivity)
                     .Text("activityId=" + activityId + ":timestamp=0"));
@@ -273,6 +274,31 @@ namespace HarmonyHub
 
                         case "message":
                             // TODO: Determine how to respond to message stanzas from the Harmony Hub
+                            if (elem.FirstChild != null)
+                            {
+                                if (elem.FirstChild.Name == "oa")
+                                {
+                                    switch (elem.FirstChild.Attributes["mime"].Value)
+                                    {
+                                        case MimeTypes.Config:
+                                            Config = JsonSerializer<HarmonyConfig>.Deserialize(elem.FirstChild.FirstChild.Value);
+                                            break;
+                                        case MimeTypes.CurrentActivity:
+                                            if (_config != null)
+                                                CurrentActivity = Config.Activity.First(x => x.Id == elem.FirstChild.FirstChild.Value.Split('=')[1]);
+                                            break;
+                                        case MimeTypes.Ping:
+                                            // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?
+                                            if (!elem.InnerText.Contains("errorcode='200'"))
+                                            {
+                                                CloseStream();
+                                                OpenStream();
+                                            }
+                                            break;
+                                    }
+                                }
+                            }
+
                             MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.FirstChild.ToString()));
                             break;
 
@@ -341,12 +367,13 @@ namespace HarmonyHub
             if (_stream == null)
                 _stream = _client.GetStream();
 
+            _clientId = Guid.NewGuid().ToString();
+            _messageId = 1;
             InitiateStream();
 
             // Login with session token
             LoginToHarmony(_ip, _sessionToken);
             Connected = true;
-
         }
 
         /// <summary>
@@ -437,7 +464,7 @@ namespace HarmonyHub
                          */
                         var swapXml = Xml.Element("iq")
                             .Attr("type", "get")
-                            .Attr("id", _messageId.ToString())
+                            .Attr("id", _clientId + "_" + _messageId.ToString())
                             .Child(Xml.Element("oa", "connect.logitech.com")
                                 .Attr("mime", "vnd.logitech.connect/vnd.logitech.pair")
                                 .Text("token=" + authToken + ":name=foo#iOS8.3.0#iPhone"));
