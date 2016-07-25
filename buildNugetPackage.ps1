@@ -1,8 +1,8 @@
 param(
-	[string]$project = ".\src\HarmonyHub\HarmonyHub\HarmonyHub.csproj",
-	[string]$solution = ".\src\HarmonyHub\HarmonyHub.sln",
-	[string]$assemblyInfoFile = ".\src\HarmonyHub\HarmonyHub\Properties\AssemblyInfo.cs",
-	[string]$nuspecFile = ".\src\HarmonyHub\HarmonyHub\HarmonyHub.nuspec"
+	[string]$project = ".\src\HarmonyHub\HarmonyHub.csproj",
+	[string]$solution = ".\src\HarmonyHub.sln",
+	[string]$assemblyInfoFile = ".\src\HarmonyHub\Properties\AssemblyInfo.cs",
+	[string]$nuspecFile = ".\src\HarmonyHub\HarmonyHub.nuspec"
 )
 
 # Tool locations
