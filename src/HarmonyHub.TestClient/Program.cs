@@ -18,6 +18,8 @@ namespace HarmonyHub.TestClient
                 client.MessageSent += (o, e) => { Console.WriteLine(e.Message); };
                 client.MessageReceived += (o, e) => { Console.WriteLine(e.Message); };
 
+                client.Connect();
+
                 var pvr = client.Config.Device.FirstOrDefault(x => x.Label == "Pace DVR");
                 var channelAction = pvr.ControlGroup.FirstOrDefault(x => x.Name == "Channel");
                 client.SendCommand(channelAction.Function.FirstOrDefault().Action);
