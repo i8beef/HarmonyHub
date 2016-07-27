@@ -1,5 +1,8 @@
 # HarmonyHub
 
+[![Build status](https://ci.appveyor.com/api/projects/status/e346wmks920k8ik7/branch/release?svg=true)](https://ci.appveyor.com/project/i8beef/harmonyhub/branch/release)
+[![Build status](https://ci.appveyor.com/api/projects/status/e346wmks920k8ik7/branch/master?svg=true)](https://ci.appveyor.com/project/i8beef/harmonyhub/branch/master)
+
 HarmonyHub is an event based .NET library for interacting with a Logitech Harmony Hub. 
 
 ### Where to get it
