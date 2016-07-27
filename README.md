@@ -7,8 +7,9 @@ HarmonyHub is an event based .NET library for interacting with a Logitech Harmon
 
 ### Where to get it
 
-Right now this library is in beta and is undergoing active development. It will be published as a NuGet package under the name "HarmonyHub" once
-a stable state has been reached.
+Run the following command in the NuGet Package Manager console to install the library:
+
+    PM> Install-Package HarmonyHub
 
 ### Architecture
 
