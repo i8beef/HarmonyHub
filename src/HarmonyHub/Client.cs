@@ -348,7 +348,7 @@ namespace HarmonyHub
         }
 
         /// <summary>
-        /// 
+        /// Opens an authenticated stream.
         /// </summary>
         private void OpenStream()
         {
