@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HarmonyHub.Exceptions;
+using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -118,7 +119,7 @@ namespace HarmonyHub
                     //throw new IOException("Unrecoverable stream error: " + condition);
                     //This indicates a disconnection event
 
-                    throw new Exception("Unrecoverable stream error: " + condition);
+                    throw new StreamException("Unrecoverable stream error: " + condition);
                 }
 
                 if (expected.Length > 0 && !expected.Contains(elem.Name))

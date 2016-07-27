@@ -1,5 +1,6 @@
 ﻿using HarmonyHub.Config;
 using HarmonyHub.Events;
+using HarmonyHub.Exceptions;
 using HarmonyHub.LogitechDataContracts;
 using System;
 using System.Globalization;
@@ -29,6 +30,7 @@ namespace HarmonyHub
         private NetworkStream _stream;
         private StreamParser _parser;
         private System.Timers.Timer _heartbeat;
+        private Task _reader;
 
         private string _sessionToken;
         private string _clientId;
@@ -36,11 +38,17 @@ namespace HarmonyHub
 
         private HarmonyConfig _config;
         private ActivityConfigElement _currentActivity;
+        private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
         /// <summary>
         /// Connected.
         /// </summary>
         public bool Connected { get; private set; }
+
+        /// <summary>
+        /// Connected.
+        /// </summary>
+        public bool Authenticated { get; private set; }
 
         /// <summary>
         /// Current config cache.
@@ -101,21 +109,9 @@ namespace HarmonyHub
             _ip = ip;
             _username = username;
             _password = password;
-
-            // Open stream
-            OpenStream();
-
-            // Set up the listener and dispatcher tasks.
-            Task.Factory.StartNew(ReadXmlStream, TaskCreationOptions.LongRunning);
-
-            // Enable keepalive
-            _heartbeat = new System.Timers.Timer();
-            _heartbeat.Elapsed += new ElapsedEventHandler((o, e) => { SendPing(); });
-            _heartbeat.Interval = 30000;
-            _heartbeat.Enabled = true;
-
-            InitializeConfig(10);
         }
+
+        #region Requests
 
         /// <summary>
         /// Send message to HarmonyHub to request Configuration.
@@ -242,6 +238,7 @@ namespace HarmonyHub
                 }
                 catch (IOException e)
                 {
+                    Authenticated = false;
                     Connected = false;
                     throw;
                 }
@@ -257,7 +254,7 @@ namespace HarmonyHub
         {
             try
             {
-                while (true)
+                while (_parser != null && !_cancellationTokenSource.Token.IsCancellationRequested)
                 {
                     XmlElement elem = _parser.NextElement("iq", "message", "presence");
                     MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.OuterXml));
@@ -285,14 +282,17 @@ namespace HarmonyHub
                                         break;
                                     case MimeTypes.Ping:
                                         // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?
-                                        if (!elem.InnerText.Contains("errorcode='200'"))
+                                        if (!oa.InnerText.Contains("errorcode='200'"))
                                         {
+                                            // Note, this will block this Thread until connection has been reestablished, so
+                                            // hopfully it doesn't attempt to access _parser in a non-initiated state
                                             CloseStream();
                                             OpenStream();
+                                            Authenticate();
                                         }
                                         break;
                                     default:
-                                        Error?.Invoke(this, new ErrorEventArgs(new Exception("Unrecognized iq stanza mime type received: oaMimeType")));
+                                        Error?.Invoke(this, new ErrorEventArgs(new UnrecognizedMessageException("Unrecognized iq stanza mime type received: oaMimeType")));
                                         break;
                                 }
                             }
@@ -308,13 +308,14 @@ namespace HarmonyHub
             }
             catch (Exception e)
             {
-                //Add the failed connection
+                // Stream has dropped
                 if (e is IOException)
                 {
+                    Authenticated = false;
                     Connected = false;
                 }
                 
-                // Raise the error event.
+                // Raise the error event, as we can't just rethrow
                 if (!_disposed)
                 {
                     Error?.Invoke(this, new ErrorEventArgs(e));
@@ -322,13 +323,45 @@ namespace HarmonyHub
             }
         }
 
+        #endregion
+
         #region Client Init and Close
+
+        /// <summary>
+        /// Connect to HarmonyHub.
+        /// </summary>
+        public void Connect()
+        {
+            // Establish a connection
+            if (_client == null)
+                _client = new TcpClient(_ip, 5222);
+
+            // Get stream handle
+            if (_stream == null)
+                _stream = _client.GetStream();
+
+            // Open stream
+            OpenStream();
+
+            // Authenticate the stream
+            Authenticate();
+
+            // Set up the listener task after authentication has been handled
+            Task.Factory.StartNew(ReadXmlStream, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+            // Read the current HarmonyHub configuration
+            InitializeConfig(10);
+        }
 
         /// <summary>
         /// Initiates the stream.
         /// </summary>
-        private void InitiateStream()
+        private void OpenStream()
         {
+            // Generate new client and message ids
+            _clientId = Guid.NewGuid().ToString();
+            _messageId = 1;
+
             // Stream initialization request
             var xml = Xml.Element("stream:stream", "jabber:client")
                 .Attr("to", "connect.logitech.com")
@@ -345,33 +378,87 @@ namespace HarmonyHub
 
             // The first element of the stream must be <stream:features>.
             var features = _parser.NextElement("stream:features");
+            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(features.OuterXml));
+
+            // Enable keepalive
+            if (_heartbeat != null)
+                _heartbeat.Dispose();
+
+            _heartbeat = new System.Timers.Timer();
+            _heartbeat.Elapsed += new ElapsedEventHandler((o, e) => { SendPing(); });
+            _heartbeat.Interval = 30000;
+            _heartbeat.Enabled = true;
+
+            Connected = true;
         }
 
         /// <summary>
         /// Opens an authenticated stream.
         /// </summary>
-        private void OpenStream()
+        private void Authenticate()
         {
             // Get session token
-            _sessionToken = GetSessionToken(_ip, _username, _password);
+            if (string.IsNullOrEmpty(_sessionToken))
+                _sessionToken = GetSessionToken(_ip, _username, _password);
+
             if (string.IsNullOrEmpty(_sessionToken))
             {
-                throw new Exception("Could not get session token on Harmony Hub.");
+                throw new SessionTokenException("Could not get session token on Harmony Hub.");
             }
-
-            if (_client == null)
-                _client = new TcpClient(_ip, 5222);
-
-            if (_stream == null)
-                _stream = _client.GetStream();
-
-            _clientId = Guid.NewGuid().ToString();
-            _messageId = 1;
-            InitiateStream();
 
             // Login with session token
             LoginToHarmony(_ip, _sessionToken);
-            Connected = true;
+            Authenticated = true;
+        }
+
+        /// <summary>
+        /// Closes the connection with the XMPP server.
+        /// </summary>
+        /// <exception cref="ObjectDisposedException">The XmppIm object has been disposed.</exception>
+        private void CloseStream()
+        {
+            if (Connected)
+            {
+                // Kill heartbeat
+                if (_heartbeat != null)
+                {
+                    _heartbeat.Enabled = false;
+                    _heartbeat.Dispose();
+                }
+
+                // Close the XML stream.
+                Send("</stream:stream>");
+
+                // Kill the stream parser
+                if (_parser != null)
+                    _parser.Dispose();
+
+                Authenticated = false;
+                Connected = false;
+            }
+        }
+
+        /// <summary>
+        /// Allows for explicit closing of session.
+        /// </summary>
+        public void Close()
+        {
+            // Close the Harmony stream
+            CloseStream();
+
+            // Stop parsing incoming feed
+            _cancellationTokenSource.Cancel();
+
+            // Dispose of stream
+            if (_stream != null)
+                _stream.Dispose();
+
+            // Disconnect socket
+            if (_client != null)
+            {
+                _client.Close();
+                _client = null;
+            }
         }
 
         /// <summary>
@@ -381,7 +468,7 @@ namespace HarmonyHub
         private void InitializeConfig(int timeout)
         {
             if (!Connected)
-                throw new Exception("Cannot refresh config while disconnected.");
+                throw new ConnectionException("Cannot refresh config while disconnected.");
 
             // Reset these to ensure blocking until refresh is complete
             Config = null;
@@ -396,7 +483,7 @@ namespace HarmonyHub
 
             // Error occured
             if ((DateTime.Now - startTime).Seconds >= timeout)
-                throw new Exception("Error occurred initializing config");
+                throw new TimeoutException("Error occurred initializing config");
 
             RequestCurrentActivity();
             startTime = DateTime.Now;
@@ -407,26 +494,7 @@ namespace HarmonyHub
 
             // Error occured (What does this do when there is no current activity?)
             if ((DateTime.Now - startTime).Seconds >= timeout)
-                throw new Exception("Error occurred getting current activity");
-        }
-
-        /// <summary>
-		/// Closes the connection with the XMPP server.
-		/// </summary>
-		/// <exception cref="ObjectDisposedException">The XmppIm object has been disposed.</exception>
-		private void CloseStream()
-        {
-            if (_disposed)
-                throw new ObjectDisposedException(GetType().FullName);
-
-            // Kill heartbeat
-            if (_heartbeat != null)
-                _heartbeat.Enabled = false;
-
-            // Close the XML stream.
-            Send("</stream:stream>");
-
-            Connected = false;
+                throw new TimeoutException("Error occurred getting current activity");
         }
 
         #endregion
@@ -447,9 +515,7 @@ namespace HarmonyHub
             // Authenticate to Logitech
             var authToken = LoginToLogitech(username, password);
             if (string.IsNullOrEmpty(authToken))
-            {
-                throw new Exception("Could not get token from Logitech server.");
-            }
+                throw new AuthTokenException("Could not get token from Logitech server.");
 
             // Swap auth token for a session token
             using (var authClient = new TcpClient(ip, 5222))
@@ -470,6 +536,7 @@ namespace HarmonyHub
                     {
                         // The first element of the stream must be <stream:features>.
                         var features = authParser.NextElement("stream:features");
+                        MessageReceived?.Invoke(this, new MessageReceivedEventArgs(features.OuterXml));
 
                         // Auth as guest
                         // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>AGd1ZXN0QHguY29tAGd1ZXN0</auth>
@@ -482,8 +549,10 @@ namespace HarmonyHub
                         // Handle response
                         while (true)
                         {
-                            if (authParser.NextElement("challenge", "success", "failure").Name != "success")
-                                throw new Exception("SASL authentication failed.");
+                            var response = authParser.NextElement("challenge", "success", "failure");
+                            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(response.OuterXml));
+                            if (response.Name != "success")
+                                throw new SaslAuthenticationException("SASL authentication failed.");
 
                             break;
                         }
@@ -509,6 +578,7 @@ namespace HarmonyHub
                         while (true)
                         {
                             XmlElement ret = authParser.NextElement("iq");
+                            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(ret.OuterXml));
                             if (ret.Name == "iq")
                             {
                                 if (ret.FirstChild != null && ret.FirstChild.Name == "oa")
@@ -525,7 +595,7 @@ namespace HarmonyHub
                                         }
                                         else
                                         {
-                                            throw new Exception("AuthToken swap failed.");
+                                            throw new AuthTokenException("AuthToken swap failed.");
                                         }
                                     }
                                 }
@@ -559,8 +629,11 @@ namespace HarmonyHub
             // Handle response
             while (true)
             {
-                if (_parser.NextElement("challenge", "success", "failure").Name != "success")
-                    throw new Exception("SASL authentication failed.");
+                var response = _parser.NextElement("challenge", "success", "failure");
+
+                MessageReceived?.Invoke(this, new MessageReceivedEventArgs(response.OuterXml));
+                if (response.Name != "success")
+                    throw new SaslAuthenticationException("SASL authentication failed.");
 
                 break;
             }
@@ -631,20 +704,7 @@ namespace HarmonyHub
                 // Get rid of managed resources.
                 if (disposing)
                 {
-                    CloseStream();
-
-                    if (_heartbeat != null)
-                        _heartbeat.Dispose();
-
-                    if (_parser != null)
-                        _parser.Dispose();
-
-                    if (_stream != null)
-                        _stream.Dispose();
-
-                    if (_client != null)
-                        _client.Close();
-                    _client = null;
+                    Close();
                 }
             }
         }

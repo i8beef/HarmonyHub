@@ -56,6 +56,12 @@
     <Compile Include="Events\MessageReceivedEventArgs.cs" />
     <Compile Include="Events\CurrentActivityEventArgs.cs" />
     <Compile Include="Events\ConfigUpdatedEventArgs.cs" />
+    <Compile Include="Exceptions\SaslAuthenticationException.cs" />
+    <Compile Include="Exceptions\ConnectionException.cs" />
+    <Compile Include="Exceptions\AuthTokenException.cs" />
+    <Compile Include="Exceptions\StreamException.cs" />
+    <Compile Include="Exceptions\UnrecognizedMessageException.cs" />
+    <Compile Include="Exceptions\SessionTokenException.cs" />
     <Compile Include="LogitechDataContracts\GetUserAuthTokenRequest.cs" />
     <Compile Include="LogitechDataContracts\GetUserAuthTokenResult.cs" />
     <Compile Include="JsonSerializer.cs" />
@@ -67,6 +73,7 @@
   <ItemGroup>
     <None Include="HarmonyHub.nuspec" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
