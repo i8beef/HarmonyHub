@@ -282,13 +282,9 @@ namespace HarmonyHub
                                         break;
                                     case MimeTypes.Ping:
                                         // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?
-                                        if (!oa.InnerText.Contains("errorcode='200'"))
+                                        if (oa.Attributes["errorcode"].Value != "200")
                                         {
-                                            // Note, this will block this Thread until connection has been reestablished, so
-                                            // hopfully it doesn't attempt to access _parser in a non-initiated state
-                                            CloseStream();
-                                            OpenStream();
-                                            Authenticate();
+                                            Error?.Invoke(this, new ErrorEventArgs(new UnrecognizedMessageException("Ping response failure: " + oa.OuterXml)));
                                         }
                                         break;
                                     default:
