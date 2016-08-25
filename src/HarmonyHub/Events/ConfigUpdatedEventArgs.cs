@@ -9,7 +9,7 @@ namespace HarmonyHub.Events
 
         public ConfigUpdatedEventArgs(HarmonyConfig config)
         {
-
+            Config = config;
         }
     }
 }
