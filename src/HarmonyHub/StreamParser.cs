@@ -111,6 +111,7 @@ namespace HarmonyHub
                     using (var xtr = new XmlTextReader(sr))
                         doc.Load(xtr);
                 XmlElement elem = (XmlElement)doc.FirstChild;
+
                 // Handle unrecoverable stream errors.
                 if (elem.Name == "stream:error")
                 {

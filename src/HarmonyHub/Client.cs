@@ -3,9 +3,10 @@ using HarmonyHub.Events;
 using HarmonyHub.Exceptions;
 using HarmonyHub.LogitechDataContracts;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -30,15 +31,15 @@ namespace HarmonyHub
         private NetworkStream _stream;
         private StreamParser _parser;
         private System.Timers.Timer _heartbeat;
-        private Task _reader;
 
         private string _sessionToken;
         private string _clientId;
         private int _messageId = 1;
 
-        private HarmonyConfig _config;
-        private ActivityConfigElement _currentActivity;
         private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+
+        // A lookup to correlate request and responses
+        private readonly IDictionary<string, TaskCompletionSource<XmlElement>> _resultTaskCompletionSources = new ConcurrentDictionary<string, TaskCompletionSource<XmlElement>>();
 
         /// <summary>
         /// Connected.
@@ -51,37 +52,9 @@ namespace HarmonyHub
         public bool Authenticated { get; private set; }
 
         /// <summary>
-        /// Current config cache.
-        /// </summary>
-        public HarmonyConfig Config {
-            get { return _config; }
-            set {
-                _config = value;
-                ConfigUpdated?.Invoke(this, new ConfigUpdatedEventArgs(_config));
-            }
-        }
-
-        /// <summary>
-        /// Current active activity.
-        /// </summary>
-        public ActivityConfigElement CurrentActivity {
-            get { return _currentActivity; }
-            set
-            {
-                _currentActivity = value;
-                CurrentActivityUpdated?.Invoke(this, new CurrentActivityEventArgs(_currentActivity));
-            }
-        }
-
-        /// <summary>
-        /// The event that is raised when the Config is updated.
-        /// </summary>
-        public event EventHandler<ConfigUpdatedEventArgs> ConfigUpdated;
-
-        /// <summary>
         /// The event that is raised when CurrentActivity is updated.
         /// </summary>
-        public event EventHandler<CurrentActivityEventArgs> CurrentActivityUpdated;
+        public event EventHandler<string> CurrentActivityUpdated;
 
         /// <summary>
         /// The event that is raised when an unrecoverable error condition occurs.
@@ -114,43 +87,68 @@ namespace HarmonyHub
         #region Requests
 
         /// <summary>
-        /// Send message to HarmonyHub to request Configuration.
+        /// Gets the current Harmony configuration.
         /// </summary>
-        public void RequestConfig()
+        public async Task<HarmonyConfig> GetConfigAsync()
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
                 .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", MimeTypes.Config));
-            Send(xml);
+                    .Attr("mime", HarmonyMimeTypes.Config));
+
+            var result = await RequestResponseAsync(xml).ConfigureAwait(false);
+
+            // Validate
+            if (result.Name == "iq" && result.HasChildNodes && result.FirstChild.Name == "oa" && 
+                result.FirstChild.Attributes["mime"] != null && result.FirstChild.Attributes["mime"].Value == HarmonyMimeTypes.Config)
+            {
+                return JsonSerializer<HarmonyConfig>.Deserialize(result.FirstChild.InnerText);
+            }
+
+            throw new UnrecognizedMessageException("Response message was not in the correct format");
         }
 
         /// <summary>
         /// Send message to HarmonyHub to request current activity.
         /// </summary>
-        public void RequestCurrentActivity()
+        public async Task<string> GetCurrentActivity()
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
                 .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", MimeTypes.CurrentActivity));
-            Send(xml);
+                    .Attr("mime", HarmonyMimeTypes.CurrentActivity));
+
+            var result = await RequestResponseAsync(xml).ConfigureAwait(false);
+
+            // Validate
+            if (result.Name == "iq" && result.HasChildNodes && result.FirstChild.Name == "oa" &&
+                result.FirstChild.Attributes["mime"] != null && result.FirstChild.Attributes["mime"].Value == HarmonyMimeTypes.CurrentActivity)
+            {
+                var currentActivityParts = result.FirstChild.InnerText.Split('=');
+                if (currentActivityParts.Length == 2)
+                {
+                    return currentActivityParts[1];
+                }
+            }
+
+            throw new UnrecognizedMessageException("Response message was not in the correct format");
         }
 
         /// <summary>
         /// Send command to the HarmonyHub.
         /// </summary>
-        public void SendCommand(string command)
+        public async Task SendCommand(string command)
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
                 .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", MimeTypes.DeviceCommand)
+                    .Attr("mime", HarmonyMimeTypes.DeviceCommand)
                     .Text("action=" + command.Replace(":", "::") + ":status=press"));
-            Send(xml);
+
+            await FireAndForgetAsync(xml).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -160,42 +158,176 @@ namespace HarmonyHub
         /// Send "-1" to trigger turning off.
         /// </remarks>
         /// <param name="activityId">The id of the activity to activate.</param>
-        public void StartActivity(int activityId)
+        public async Task StartActivity(int activityId)
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
                 .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", MimeTypes.StartActivity)
-                    .Text(string.Format("activityId={0}:timestamp=0", activityId)));
-            Send(xml);
+                    .Attr("mime", HarmonyMimeTypes.StartActivity)
+                    .Text(string.Format("activityId={0}:timestamp={1}", activityId, (DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds)));
+
+            await RequestResponseAsync(xml).ConfigureAwait(false);
         }
 
         /// <summary>
         /// Sends a ping to HarmonyHub to keep connection alive.
         /// </summary>
-        public void SendPing()
+        public async Task SendPing()
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
                 .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", MimeTypes.Ping));
-            Send(xml);
+                    .Attr("mime", HarmonyMimeTypes.Ping));
+
+            await RequestResponseAsync(xml).ConfigureAwait(false);
         }
 
         /// <summary>
-        /// Send message to HarmonyHub to start an activity.
+        /// Listens for incoming XML stanzas and raises the appropriate events.
         /// </summary>
-        public void StartActivity(string activityId)
+        /// <remarks>This runs in the context of a separate thread. In case of an
+        /// exception, the Error event is raised and the thread is shutdown.</remarks>
+        private void ReadXmlStream()
         {
-            var xml = Xml.Element("iq")
-                .Attr("type", "get")
-                .Attr("id", _clientId + "_" + _messageId.ToString())
-                .Child(Xml.Element("oa", "connect.logitech.com")
-                    .Attr("mime", MimeTypes.StartActivity)
-                    .Text("activityId=" + activityId + ":timestamp=0"));
-            Send(xml);
+            try
+            {
+                while (_parser != null && !_cancellationTokenSource.Token.IsCancellationRequested)
+                {
+                    XmlElement elem = _parser.NextElement("iq", "message", "presence");
+                    MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.OuterXml));
+
+                    if (elem.Name == "iq" && elem.HasChildNodes)
+                    {
+                        var messageId = elem.Attributes["id"].Value;
+                        TaskCompletionSource<XmlElement> resultTaskCompletionSource;
+                        if (messageId != null && _resultTaskCompletionSources.TryGetValue(messageId, out resultTaskCompletionSource))
+                        {
+                            var oaNode = elem.FirstChild;
+                            if (oaNode != null && oaNode.Name == "oa")
+                            switch (oaNode.Attributes["errorcode"].Value)
+                            {
+                                case "200":
+                                    resultTaskCompletionSource.TrySetResult(elem);
+                                    _resultTaskCompletionSources.Remove(messageId);
+                                    break;
+                                case "100":
+                                    // Ignore continuation messages
+                                    break;
+                                default:
+                                    var errorMessage = oaNode.Attributes["errorstring"].Value;
+                                    resultTaskCompletionSource.TrySetException(new Exception(errorMessage));
+                                    _resultTaskCompletionSources.Remove(messageId);
+                                    break;
+                            }
+                        }
+                    }
+                    else if (elem.Name == "message" && elem.HasChildNodes)
+                    {
+                        var eventNode = elem.FirstChild;
+                        if (eventNode != null && eventNode.Name == "event" && eventNode.Attributes["type"] != null)
+                        {
+                            switch (eventNode.Attributes["type"].Value)
+                            {
+                                case HarmonyEventTypes.StartActivityFinished:
+                                    var startActivityParts = eventNode.InnerText.Split(':');
+                                    if (startActivityParts.Length == 3)
+                                    {
+                                        var startActivityIdParts = startActivityParts[0].Split('=');
+                                        if (startActivityIdParts.Length == 2)
+                                        {
+                                            CurrentActivityUpdated?.Invoke(this, startActivityIdParts[1]);
+                                        }
+                                    }
+                                    break;
+                                case HarmonyEventTypes.StateDigest:
+                                    var notify = JsonSerializer<HarmonyNotify>.Deserialize(eventNode.InnerText);
+                                    // TODO: What to do with this?
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                // Stream has dropped
+                if (e is IOException)
+                {
+                    Authenticated = false;
+                    Connected = false;
+                }
+                
+                // Raise the error event, as we can't just rethrow
+                if (!_disposed)
+                {
+                    Error?.Invoke(this, new ErrorEventArgs(e));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Send a document, ignore the response (but wait shortly for a possible error)
+        /// </summary>
+        /// <param name="xml">The XML message.</param>
+        /// <param name="waitTimeout">the time to wait for a possible error, if this is too small errors are ignored.</param>
+        /// <returns>Task to await on</returns>
+        private async Task FireAndForgetAsync(XmlElement message, int waitTimeout = 50)
+        {
+            var messageId = message.Attributes["id"].Value;
+
+            // Prepare the TaskCompletionSource, which is used to await the result
+            var resultTaskCompletionSource = new TaskCompletionSource<XmlElement>();
+            _resultTaskCompletionSources[messageId] = resultTaskCompletionSource;
+
+            // Start the sending
+            Send(message);
+
+            // Await, to make sure there wasn't an error
+            var task = await Task.WhenAny(resultTaskCompletionSource.Task, Task.Delay(waitTimeout)).ConfigureAwait(false);
+
+            // Remove the result task, as we no longer need it.
+            _resultTaskCompletionSources.Remove(messageId);
+
+            // This makes sure the exception, if there was one, is unwrapped
+            await task;
+        }
+
+        /// <summary>
+        ///     Send a document, await the response and return it
+        /// </summary>
+        /// <param name="document">Document</param>
+        /// <param name="timeout">Timeout for waiting on the response, if this passes a timeout exception is thrown</param>
+        /// <returns>IQ response</returns>
+        private async Task<XmlElement> RequestResponseAsync(XmlElement message, int timeout = 2000)
+        {
+            var messageId = message.Attributes["id"].Value;
+
+            // Prepate the TaskCompletionSource, which is used to await the result
+            var resultTaskCompletionSource = new TaskCompletionSource<XmlElement>();
+            _resultTaskCompletionSources[messageId] = resultTaskCompletionSource;
+
+            // Create the action which is called when a timeout occurs
+            Action timeoutAction = () =>
+            {
+                // Remove the registration, it is no longer needed
+                _resultTaskCompletionSources.Remove(messageId);
+
+                // Pass the timeout exception to the await
+                resultTaskCompletionSource.TrySetException(new TimeoutException($"Timeout while waiting on response {messageId} after {timeout}"));
+            };
+
+            // Start the sending
+            Send(message);
+
+            // Setup the timeout handling
+            var cancellationTokenSource = new CancellationTokenSource(timeout);
+            using (cancellationTokenSource.Token.Register(timeoutAction))
+            {
+                // Await / block until an reply arrives or the timeout happens
+                return await resultTaskCompletionSource.Task.ConfigureAwait(false);
+            }
         }
 
         /// <summary>
@@ -236,96 +368,12 @@ namespace HarmonyHub
                     _messageId++;
                     MessageSent?.Invoke(this, new MessageSentEventArgs(xml));
                 }
-                catch (IOException e)
+                catch
                 {
                     Authenticated = false;
                     Connected = false;
+
                     throw;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Listens for incoming XML stanzas and raises the appropriate events.
-        /// </summary>
-        /// <remarks>This runs in the context of a separate thread. In case of an
-        /// exception, the Error event is raised and the thread is shutdown.</remarks>
-        private void ReadXmlStream()
-        {
-            try
-            {
-                while (_parser != null && !_cancellationTokenSource.Token.IsCancellationRequested)
-                {
-                    XmlElement elem = _parser.NextElement("iq", "message", "presence");
-                    MessageReceived?.Invoke(this, new MessageReceivedEventArgs(elem.OuterXml));
-
-                    // Parse element and dispatch.
-                    switch (elem.Name)
-                    {
-                        case "iq":
-                            var oa = elem.FirstChild;
-                            if (oa != null && oa.Name == "oa")
-                            {
-                                var oaMimeType = oa.Attributes["mime"]?.Value;
-                                switch (oaMimeType)
-                                {
-                                    case MimeTypes.Config:
-                                        Config = JsonSerializer<HarmonyConfig>.Deserialize(oa.InnerText);
-                                        break;
-                                    case MimeTypes.CurrentActivity:
-                                        if (_config != null && !string.IsNullOrEmpty(oa.InnerText))
-                                        {
-                                            var currentActivityParts = oa.InnerText.Split('=');
-                                            if (currentActivityParts.Length == 2)
-                                            {
-                                                CurrentActivity = Config.Activity.First(x => x.Id == currentActivityParts[1]);
-                                            }
-                                        }
-                                        break;
-                                    case MimeTypes.StartActivity:
-                                        if (_config != null && !string.IsNullOrEmpty(oa.InnerText))
-                                        {
-                                            var startActivityParts = oa.InnerText.Split('=');
-                                            if (startActivityParts.Length == 2)
-                                            {
-                                                CurrentActivity = Config.Activity.First(x => x.Id == startActivityParts[1]);
-                                            }
-                                        }
-                                        break;
-                                    case MimeTypes.Ping:
-                                        if (oa.Attributes["errorcode"].Value != "200")
-                                        {
-                                            throw new PingFailureException("Ping response failure: " + oa.OuterXml);
-                                        }
-                                        break;
-                                    default:
-                                        Error?.Invoke(this, new ErrorEventArgs(new UnrecognizedMessageException("Unrecognized iq stanza mime type received: oaMimeType")));
-                                        break;
-                                }
-                            }
-                            break;
-                        case "message":
-                            // TODO: Determine how to respond to message stanzas from the Harmony Hub
-                            break;
-                        case "presence":
-                            // TODO: Determine if Harmony Hub ever publishes presence stanzas
-                            break;
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                // Stream has dropped
-                if (e is IOException)
-                {
-                    Authenticated = false;
-                    Connected = false;
-                }
-                
-                // Raise the error event, as we can't just rethrow
-                if (!_disposed)
-                {
-                    Error?.Invoke(this, new ErrorEventArgs(e));
                 }
             }
         }
@@ -355,9 +403,6 @@ namespace HarmonyHub
 
             // Set up the listener task after authentication has been handled
             Task.Factory.StartNew(ReadXmlStream, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-
-            // Read the current HarmonyHub configuration
-            InitializeConfig(10);
         }
 
         /// <summary>
@@ -392,11 +437,30 @@ namespace HarmonyHub
                 _heartbeat.Dispose();
 
             _heartbeat = new System.Timers.Timer();
-            _heartbeat.Elapsed += new ElapsedEventHandler((o, e) => { SendPing(); });
+            _heartbeat.Elapsed += Heatbeat;
             _heartbeat.Interval = 30000;
-            _heartbeat.Enabled = true;
+            _heartbeat.Start();
 
             Connected = true;
+        }
+
+        /// <summary>
+        /// Heartbeat ping.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private async void Heatbeat(object sender, ElapsedEventArgs e)
+        {
+            try
+            {
+                await SendPing().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Error?.Invoke(this, new ErrorEventArgs(ex));
+                System.Timers.Timer timer = (System.Timers.Timer)sender;
+                timer.Stop();
+            }
         }
 
         /// <summary>
@@ -429,7 +493,7 @@ namespace HarmonyHub
                 // Kill heartbeat
                 if (_heartbeat != null)
                 {
-                    _heartbeat.Enabled = false;
+                    _heartbeat.Stop();
                     _heartbeat.Dispose();
                 }
 
@@ -466,42 +530,6 @@ namespace HarmonyHub
                 _client.Close();
                 _client = null;
             }
-        }
-
-        /// <summary>
-        /// Poor mans config initializer.
-        /// </summary>
-        /// <param name="timeout">Timeout in seconds for each call</param>
-        private void InitializeConfig(int timeout)
-        {
-            if (!Connected)
-                throw new ConnectionException("Cannot refresh config while disconnected.");
-
-            // Reset these to ensure blocking until refresh is complete
-            Config = null;
-            CurrentActivity = null;
-
-            RequestConfig();
-            var startTime = DateTime.Now;
-            while (Config == null && (DateTime.Now - startTime).Seconds < timeout) {
-                // TODO: This is probably evil here
-                Thread.Sleep(50);
-            }
-
-            // Error occured
-            if ((DateTime.Now - startTime).Seconds >= timeout)
-                throw new TimeoutException("Error occurred initializing config");
-
-            RequestCurrentActivity();
-            startTime = DateTime.Now;
-            while (CurrentActivity == null && (DateTime.Now - startTime).Seconds < timeout) {
-                // TODO: This is probably evil here
-                Thread.Sleep(50);
-            }
-
-            // Error occured (What does this do when there is no current activity?)
-            if ((DateTime.Now - startTime).Seconds >= timeout)
-                throw new TimeoutException("Error occurred getting current activity");
         }
 
         #endregion

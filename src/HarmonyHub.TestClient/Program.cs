@@ -17,12 +17,14 @@ namespace HarmonyHub.TestClient
                 // Setup event handlers
                 client.MessageSent += (o, e) => { Console.WriteLine(e.Message); };
                 client.MessageReceived += (o, e) => { Console.WriteLine(e.Message); };
+                client.Error += (o, e) => { Console.WriteLine(e.GetException().Message); };
 
                 client.Connect();
 
-                var pvr = client.Config.Device.FirstOrDefault(x => x.Label == "Pace DVR");
+                var config = client.GetConfigAsync().Result;
+
+                var pvr = config.Device.FirstOrDefault(x => x.Label == "Pace DVR");
                 var channelAction = pvr.ControlGroup.FirstOrDefault(x => x.Name == "Channel");
-                client.SendCommand(channelAction.Function.FirstOrDefault().Action);
                 Console.ReadLine();
             }
         }

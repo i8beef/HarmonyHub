@@ -54,8 +54,6 @@
     <Compile Include="Config\SequenceConfigElement.cs" />
     <Compile Include="Events\MessageSentEventArgs.cs" />
     <Compile Include="Events\MessageReceivedEventArgs.cs" />
-    <Compile Include="Events\CurrentActivityEventArgs.cs" />
-    <Compile Include="Events\ConfigUpdatedEventArgs.cs" />
     <Compile Include="Exceptions\PingFailureException.cs" />
     <Compile Include="Exceptions\SaslAuthenticationException.cs" />
     <Compile Include="Exceptions\ConnectionException.cs" />
@@ -66,7 +64,9 @@
     <Compile Include="LogitechDataContracts\GetUserAuthTokenRequest.cs" />
     <Compile Include="LogitechDataContracts\GetUserAuthTokenResult.cs" />
     <Compile Include="JsonSerializer.cs" />
-    <Compile Include="MimeTypes.cs" />
+    <Compile Include="HarmonyEventTypes.cs" />
+    <Compile Include="HarmonyMimeTypes.cs" />
+    <Compile Include="Notify\HarmonyNotify.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Xml.cs" />
     <Compile Include="StreamParser.cs" />

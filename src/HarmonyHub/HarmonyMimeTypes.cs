@@ -1,6 +1,6 @@
 ﻿namespace HarmonyHub
 {
-    internal class MimeTypes
+    internal class HarmonyMimeTypes
     {
         public const string Config = "vnd.logitech.harmony/vnd.logitech.harmony.engine?config";
         public const string CurrentActivity = "vnd.logitech.harmony/vnd.logitech.harmony.engine?getCurrentActivity";
