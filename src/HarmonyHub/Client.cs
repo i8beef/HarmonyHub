@@ -273,18 +273,29 @@ namespace HarmonyHub
                                         Config = JsonSerializer<HarmonyConfig>.Deserialize(oa.InnerText);
                                         break;
                                     case MimeTypes.CurrentActivity:
-                                        if (_config != null)
-                                            CurrentActivity = Config.Activity.First(x => x.Id == oa.InnerText.Split('=')[1]);
+                                        if (_config != null && !string.IsNullOrEmpty(oa.InnerText))
+                                        {
+                                            var currentActivityParts = oa.InnerText.Split('=');
+                                            if (currentActivityParts.Length == 2)
+                                            {
+                                                CurrentActivity = Config.Activity.First(x => x.Id == currentActivityParts[1]);
+                                            }
+                                        }
                                         break;
                                     case MimeTypes.StartActivity:
-                                        if (_config != null)
-                                            CurrentActivity = Config.Activity.First(x => x.Id == oa.InnerText.Split('=')[1]);
+                                        if (_config != null && !string.IsNullOrEmpty(oa.InnerText))
+                                        {
+                                            var startActivityParts = oa.InnerText.Split('=');
+                                            if (startActivityParts.Length == 2)
+                                            {
+                                                CurrentActivity = Config.Activity.First(x => x.Id == startActivityParts[1]);
+                                            }
+                                        }
                                         break;
                                     case MimeTypes.Ping:
-                                        // TODO: What does a failed ping look like? Should we attempt to restablish a connection like this?
                                         if (oa.Attributes["errorcode"].Value != "200")
                                         {
-                                            Error?.Invoke(this, new ErrorEventArgs(new UnrecognizedMessageException("Ping response failure: " + oa.OuterXml)));
+                                            throw new PingFailureException("Ping response failure: " + oa.OuterXml);
                                         }
                                         break;
                                     default:
