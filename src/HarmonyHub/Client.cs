@@ -112,7 +112,7 @@ namespace HarmonyHub
         /// <summary>
         /// Send message to HarmonyHub to request current activity.
         /// </summary>
-        public async Task<string> GetCurrentActivity()
+        public async Task<int> GetCurrentActivityIdAsync()
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
@@ -129,7 +129,11 @@ namespace HarmonyHub
                 var currentActivityParts = result.FirstChild.InnerText.Split('=');
                 if (currentActivityParts.Length == 2)
                 {
-                    return currentActivityParts[1];
+                    int id;
+                    if (int.TryParse(currentActivityParts[1], out id))
+                    {
+                        return id;
+                    }
                 }
             }
 
@@ -139,7 +143,7 @@ namespace HarmonyHub
         /// <summary>
         /// Send command to the HarmonyHub.
         /// </summary>
-        public async Task SendCommand(string command)
+        public async Task SendCommandAsync(string command)
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
@@ -158,7 +162,7 @@ namespace HarmonyHub
         /// Send "-1" to trigger turning off.
         /// </remarks>
         /// <param name="activityId">The id of the activity to activate.</param>
-        public async Task StartActivity(int activityId)
+        public async Task StartActivityAsync(int activityId)
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
@@ -173,7 +177,7 @@ namespace HarmonyHub
         /// <summary>
         /// Sends a ping to HarmonyHub to keep connection alive.
         /// </summary>
-        public async Task SendPing()
+        public async Task SendPingAsync()
         {
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
@@ -443,7 +447,7 @@ namespace HarmonyHub
                 _heartbeat.Dispose();
 
             _heartbeat = new System.Timers.Timer();
-            _heartbeat.Elapsed += Heatbeat;
+            _heartbeat.Elapsed += HeatbeatAsync;
             _heartbeat.Interval = 30000;
             _heartbeat.Start();
 
@@ -456,11 +460,11 @@ namespace HarmonyHub
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private async void Heatbeat(object sender, ElapsedEventArgs e)
+        private async void HeatbeatAsync(object sender, ElapsedEventArgs e)
         {
             try
             {
-                await SendPing().ConfigureAwait(false);
+                await SendPingAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {

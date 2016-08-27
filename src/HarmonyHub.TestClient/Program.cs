@@ -48,11 +48,11 @@ namespace HarmonyHub.TestClient
                     switch (input)
                     {
                         case 'a':
-                            var activityId = await client.GetCurrentActivity();
+                            var activityId = await client.GetCurrentActivityIdAsync();
                             Console.ForegroundColor = ConsoleColor.Yellow;
                             Console.Write("Current activity: ");
                             Console.ResetColor();
-                            Console.WriteLine($"{config.Activity.First(x => x.Id == activityId).Label} ({activityId})");
+                            Console.WriteLine($"{config.Activity.First(x => x.Id == activityId.ToString()).Label} ({activityId})");
                             break;
                         case 'c':
                             Console.WriteLine("EXECUTE COMMAND");
@@ -119,7 +119,7 @@ namespace HarmonyHub.TestClient
                             var commandAction = config.Device.First(x => x.Label == targetDeviceName).
                                 ControlGroup.First(x => x.Name == targetControlGroup).
                                 Function.First(x => x.Label == targetControlFunction).Action;
-                            await client.SendCommand(commandAction);
+                            await client.SendCommandAsync(commandAction);
                             break;
                     }
 
