@@ -54,7 +54,7 @@ namespace HarmonyHub
         /// <summary>
         /// The event that is raised when CurrentActivity is updated.
         /// </summary>
-        public event EventHandler<string> CurrentActivityUpdated;
+        public event EventHandler<int> CurrentActivityUpdated;
 
         /// <summary>
         /// The event that is raised when an unrecoverable error condition occurs.
@@ -241,7 +241,11 @@ namespace HarmonyHub
                                         var startActivityIdParts = startActivityParts[0].Split('=');
                                         if (startActivityIdParts.Length == 2)
                                         {
-                                            CurrentActivityUpdated?.Invoke(this, startActivityIdParts[1]);
+                                            int id;
+                                            if (int.TryParse(startActivityIdParts[1], out id))
+                                            {
+                                                CurrentActivityUpdated?.Invoke(this, id);
+                                            }
                                         }
                                     }
                                     break;
