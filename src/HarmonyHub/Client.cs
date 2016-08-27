@@ -242,8 +242,10 @@ namespace HarmonyHub
                                     }
                                     break;
                                 case HarmonyEventTypes.StateDigest:
-                                    var notify = JsonSerializer<HarmonyNotify>.Deserialize(eventNode.InnerText);
                                     // TODO: What to do with this?
+                                    // It seems that these are purely informational, currently comments out to avoid the serialization hit
+                                    // but left in, for the case that this becomes useful later on
+                                    //var notify = JsonSerializer<HarmonyNotify>.Deserialize(eventNode.InnerText);
                                     break;
                             }
                         }
@@ -252,14 +254,14 @@ namespace HarmonyHub
             }
             catch (Exception e)
             {
-                // Stream has dropped
+                // Stream has dropped, this happens naturally on Dispose
                 if (e is IOException)
                 {
                     Authenticated = false;
                     Connected = false;
                 }
                 
-                // Raise the error event, as we can't just rethrow
+                // An exception outside of Dispose should be raised to the caller to handle
                 if (!_disposed)
                 {
                     Error?.Invoke(this, new ErrorEventArgs(e));
@@ -268,12 +270,12 @@ namespace HarmonyHub
         }
 
         /// <summary>
-        /// Send a document, ignore the response (but wait shortly for a possible error)
+        /// Send a message without waiting for response.
         /// </summary>
-        /// <param name="xml">The XML message.</param>
-        /// <param name="waitTimeout">the time to wait for a possible error, if this is too small errors are ignored.</param>
-        /// <returns>Task to await on</returns>
-        private async Task FireAndForgetAsync(XmlElement message, int waitTimeout = 50)
+        /// <param name="message">The message to be sent.</param>
+        /// <param name="timeout">Time to wait for an error response.</param>
+        /// <returns>A <see cref="cref="Task"/>.</returns>
+        private async Task FireAndForgetAsync(XmlElement message, int timeout = 50)
         {
             var messageId = message.Attributes["id"].Value;
 
@@ -285,7 +287,7 @@ namespace HarmonyHub
             Send(message);
 
             // Await, to make sure there wasn't an error
-            var task = await Task.WhenAny(resultTaskCompletionSource.Task, Task.Delay(waitTimeout)).ConfigureAwait(false);
+            var task = await Task.WhenAny(resultTaskCompletionSource.Task, Task.Delay(timeout)).ConfigureAwait(false);
 
             // Remove the result task, as we no longer need it.
             _resultTaskCompletionSources.Remove(messageId);
@@ -295,11 +297,11 @@ namespace HarmonyHub
         }
 
         /// <summary>
-        ///     Send a document, await the response and return it
+        /// Sends a request response message.
         /// </summary>
-        /// <param name="document">Document</param>
-        /// <param name="timeout">Timeout for waiting on the response, if this passes a timeout exception is thrown</param>
-        /// <returns>IQ response</returns>
+        /// <param name="message">The message to be sent.</param>
+        /// <param name="timeout">Timeout for the response, exception thrown on expiration.</param>
+        /// <returns>Response message.</returns>
         private async Task<XmlElement> RequestResponseAsync(XmlElement message, int timeout = 2000)
         {
             var messageId = message.Attributes["id"].Value;
@@ -311,21 +313,17 @@ namespace HarmonyHub
             // Create the action which is called when a timeout occurs
             Action timeoutAction = () =>
             {
-                // Remove the registration, it is no longer needed
                 _resultTaskCompletionSources.Remove(messageId);
-
-                // Pass the timeout exception to the await
                 resultTaskCompletionSource.TrySetException(new TimeoutException($"Timeout while waiting on response {messageId} after {timeout}"));
             };
 
-            // Start the sending
             Send(message);
 
-            // Setup the timeout handling
+            // Handle timeout
             var cancellationTokenSource = new CancellationTokenSource(timeout);
             using (cancellationTokenSource.Token.Register(timeoutAction))
             {
-                // Await / block until an reply arrives or the timeout happens
+                // Await until response or timeout
                 return await resultTaskCompletionSource.Task.ConfigureAwait(false);
             }
         }
@@ -334,10 +332,8 @@ namespace HarmonyHub
         /// Serializes and sends the specified XML element to the server.
         /// </summary>
         /// <param name="element">The XML element to send.</param>
-        /// <exception cref="ArgumentNullException">The element parameter
-        /// is null.</exception>
-        /// <exception cref="IOException">There was a failure while writing
-        /// to the network.</exception>
+        /// <exception cref="ArgumentNullException">The element parameter is null.</exception>
+        /// <exception cref="IOException">There was a failure while writing to the network.</exception>
         private void Send(XmlElement element)
         {
             if (element == null)
@@ -349,10 +345,12 @@ namespace HarmonyHub
         /// <summary>
         /// Sends the specified string to the server.
         /// </summary>
+        /// <remarks>
+        /// Do not use this method directly except for stream initialization and closing.
+        /// </remarks>
         /// <param name="xml">The string to send.</param>
         /// <exception cref="ArgumentNullException">The xml parameter is null.</exception>
-        /// <exception cref="IOException">There was a failure while writing to
-        /// the network.</exception>
+        /// <exception cref="IOException">There was a failure while writing to the network.</exception>
         private void Send(string xml)
         {
             if (xml == null)
