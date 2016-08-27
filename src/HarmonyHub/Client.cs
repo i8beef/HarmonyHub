@@ -277,6 +277,10 @@ namespace HarmonyHub
         /// <returns>A <see cref="cref="Task"/>.</returns>
         private async Task FireAndForgetAsync(XmlElement message, int timeout = 50)
         {
+            // Heartbeat check
+            if (!_heartbeat.Enabled)
+                throw new ConnectionException("Connection already closed or not authenticated");
+
             var messageId = message.Attributes["id"].Value;
 
             // Prepare the TaskCompletionSource, which is used to await the result
@@ -304,6 +308,10 @@ namespace HarmonyHub
         /// <returns>Response message.</returns>
         private async Task<XmlElement> RequestResponseAsync(XmlElement message, int timeout = 2000)
         {
+            // Heartbeat check
+            if (!_heartbeat.Enabled)
+                throw new ConnectionException("Connection already closed or not authenticated");
+
             var messageId = message.Attributes["id"].Value;
 
             // Prepate the TaskCompletionSource, which is used to await the result
@@ -443,7 +451,8 @@ namespace HarmonyHub
         }
 
         /// <summary>
-        /// Heartbeat ping.
+        /// Heartbeat ping. Failure will result in the heartbeat being stopped, which will 
+        /// make any future calls throw an exception as the heartbeat indicator will be disabled.
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
