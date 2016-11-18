@@ -26,6 +26,7 @@ namespace HarmonyHub
         private string _ip;
         private string _username;
         private string _password;
+        private bool _bypassLogitech;
 
         private TcpClient _client;
         private NetworkStream _stream;
@@ -75,13 +76,20 @@ namespace HarmonyHub
         /// Constructor.
         /// </summary>
         /// <param name="ip"></param>
+        public Client(string ip) : this(ip, null, null, true) { }
+
+        /// <summary>
+        /// Constructor.
+        /// </summary>
+        /// <param name="ip"></param>
         /// <param name="username"></param>
         /// <param name="password"></param>
-        public Client(string ip, string username, string password)
+        public Client(string ip, string username, string password, bool bypassLogitech = false)
         {
             _ip = ip;
             _username = username;
             _password = password;
+            _bypassLogitech = bypassLogitech;
         }
 
         #region Requests
@@ -485,7 +493,7 @@ namespace HarmonyHub
         {
             // Get session token
             if (string.IsNullOrEmpty(_sessionToken))
-                _sessionToken = GetSessionToken(_ip, _username, _password);
+                _sessionToken = GetSessionToken(_ip, _username, _password, _bypassLogitech);
 
             if (string.IsNullOrEmpty(_sessionToken))
             {
@@ -558,14 +566,18 @@ namespace HarmonyHub
         /// <param name="username">Username.</param>
         /// <param name="password">Passwprd.</param>
         /// <returns>Harmony session token.</returns>
-        private string GetSessionToken(string ip, string username, string password)
+        private string GetSessionToken(string ip, string username, string password, bool bypassLogitech)
         {
             var sessionToken = "";
 
-            // Authenticate to Logitech
-            var authToken = LoginToLogitech(username, password);
-            if (string.IsNullOrEmpty(authToken))
-                throw new AuthTokenException("Could not get token from Logitech server.");
+            var authToken = ""; ;
+            if (!bypassLogitech)
+            {
+                // Authenticate to Logitech
+                authToken = LoginToLogitech(username, password);
+                if (string.IsNullOrEmpty(authToken))
+                    throw new AuthTokenException("Could not get token from Logitech server.");
+            }
 
             // Swap auth token for a session token
             using (var authClient = new TcpClient(ip, 5222))
@@ -615,12 +627,13 @@ namespace HarmonyHub
                          *   </oa>
                          * </iq>
                          */
+                        var methodOrToken = bypassLogitech ? "method=pair" : "token=" + authToken;
                         var swapXml = Xml.Element("iq")
                             .Attr("type", "get")
                             .Attr("id", _clientId + "_" + _messageId.ToString())
                             .Child(Xml.Element("oa", "connect.logitech.com")
-                                .Attr("mime", "vnd.logitech.connect/vnd.logitech.pair")
-                                .Text("token=" + authToken + ":name=foo#iOS8.3.0#iPhone"));
+                                .Attr("mime", HarmonyMimeTypes.Pair)
+                                .Text(methodOrToken + ":name=foo#iOS8.3.0#iPhone"));
                         byte[] swapBuffer = Encoding.UTF8.GetBytes(swapXml.ToXmlString());
                         authStream.Write(swapBuffer, 0, swapBuffer.Length);
 
@@ -721,7 +734,7 @@ namespace HarmonyHub
             {
                 var result = streamReader.ReadToEnd();
                 var harmonyData = JsonSerializer<GetUserAuthTokenResultRootObject>.Deserialize(result);
-                return harmonyData.GetUserAuthTokenResult.UserAuthToken;
+                return harmonyData.GetUserAuthTokenResult?.UserAuthToken;
             }
         }
 
