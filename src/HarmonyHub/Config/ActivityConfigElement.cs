@@ -9,7 +9,7 @@ namespace HarmonyHub.Config
         public ActivityConfigElement()
         {
             ControlGroup = new List<ControlGroupConfigElement>();
-            Sequences = new List<SequenceConfigElement>();
+            Sequences = new List<string>();
             Fixit = new Dictionary<int, FixitConfigElement>();
             Rules = new List<RuleConfigElement>();
         }
@@ -33,7 +33,7 @@ namespace HarmonyHub.Config
         public IList<ControlGroupConfigElement> ControlGroup { get; set; }
 
         [DataMember(Name = "sequences")]
-        public IList<SequenceConfigElement> Sequences { get; set; }
+        public IList<string> Sequences { get; set; }
 
         [DataMember(Name = "fixit")]
         public IDictionary<int, FixitConfigElement> Fixit { get; set; }
