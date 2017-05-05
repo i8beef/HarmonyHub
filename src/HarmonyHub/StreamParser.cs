@@ -1,9 +1,9 @@
-﻿using HarmonyHub.Exceptions;
-using System;
+﻿using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Xml;
+using HarmonyHub.Exceptions;
 
 namespace HarmonyHub
 {
@@ -35,13 +35,7 @@ namespace HarmonyHub
         private Stream _stream;
 
         /// <summary>
-        /// The default language of any human-readable XML character send over
-        /// that stream.
-        /// </summary>
-        public CultureInfo Language { get; private set; }
-
-        /// <summary>
-        /// Initializes a new instance of the StreamParser class for the specified
+        /// Initializes a new instance of the <see cref="StreamParser"/> class.
         /// stream.
         /// </summary>
         /// <param name="stream">The stream to read the XML data from.</param>
@@ -60,17 +54,25 @@ namespace HarmonyHub
 
             _leaveOpen = leaveOpen;
             _stream = stream;
-            _reader = XmlReader.Create(stream, new XmlReaderSettings()
+            var settings = new XmlReaderSettings
             {
                 // Ignore restricted XML data (Refer to RFC 3920, 11.1 Restrictions).
                 IgnoreProcessingInstructions = true,
                 IgnoreComments = true,
                 IgnoreWhitespace = true
-            });
+            };
+
+            _reader = XmlReader.Create(stream, settings);
 
             // Read up to the opening stream tag.
             ReadRootElement();
         }
+
+        /// <summary>
+        /// The default language of any human-readable XML character send over
+        /// that stream.
+        /// </summary>
+        public CultureInfo Language { get; private set; }
 
         /// <summary>
         /// Reads the next XML element from the input stream.
@@ -117,9 +119,8 @@ namespace HarmonyHub
                 {
                     string condition = elem.FirstChild != null ? elem.FirstChild.Name : "undefined";
 
-                    //throw new IOException("Unrecoverable stream error: " + condition);
-                    //This indicates a disconnection event
-
+                    // throw new IOException("Unrecoverable stream error: " + condition);
+                    // This indicates a disconnection event
                     throw new StreamException("Unrecoverable stream error: " + condition);
                 }
 
@@ -151,7 +152,7 @@ namespace HarmonyHub
                         {
                             // Remember the default language communicated by the server.
                             string lang = _reader.GetAttribute("xml:lang");
-                            if (!String.IsNullOrEmpty(lang))
+                            if (!string.IsNullOrEmpty(lang))
                                 Language = new CultureInfo(lang);
                             return;
                         }
@@ -162,7 +163,6 @@ namespace HarmonyHub
                 }
             }
         }
-
 
         #region IDisposable interface implementation
 
@@ -176,12 +176,12 @@ namespace HarmonyHub
         }
 
         /// <summary>
-		/// Releases all resources used by the current instance of the XmppIm
-		/// class, optionally disposing of managed resource.
-		/// </summary>
-		/// <param name="disposing">true to dispose of managed resources, otherwise
-		/// false.</param>
-		protected virtual void Dispose(bool disposing)
+        /// Releases all resources used by the current instance of the XmppIm
+        /// class, optionally disposing of managed resource.
+        /// </summary>
+        /// <param name="disposing">true to dispose of managed resources, otherwise
+        /// false.</param>
+        protected virtual void Dispose(bool disposing)
         {
             if (!_disposed)
             {

@@ -1,8 +1,4 @@
-﻿using HarmonyHub.Config;
-using HarmonyHub.Events;
-using HarmonyHub.Exceptions;
-using HarmonyHub.LogitechDataContracts;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -15,13 +11,24 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Xml;
+using HarmonyHub.Config;
+using HarmonyHub.Events;
+using HarmonyHub.Exceptions;
+using HarmonyHub.LogitechDataContracts;
 
 namespace HarmonyHub
 {
+    /// <summary>
+    /// Harmony Hub client implementation.
+    /// </summary>
     public class Client : IDisposable
     {
-        private bool _disposed;
         private readonly object _writeLock = new object();
+
+        // A lookup to correlate request and responses
+        private readonly IDictionary<string, TaskCompletionSource<XmlElement>> _resultTaskCompletionSources = new ConcurrentDictionary<string, TaskCompletionSource<XmlElement>>();
+
+        private bool _disposed;
 
         private string _ip;
         private string _username;
@@ -39,23 +46,32 @@ namespace HarmonyHub
 
         private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
-        // A lookup to correlate request and responses
-        private readonly IDictionary<string, TaskCompletionSource<XmlElement>> _resultTaskCompletionSources = new ConcurrentDictionary<string, TaskCompletionSource<XmlElement>>();
+        /// <summary>
+        /// Initializes a new instance of the <see cref="Client"/> class.
+        /// </summary>
+        /// <param name="ip">IP address of the Harmony.</param>
+        public Client(string ip)
+            : this(ip, null, null, true) { }
 
         /// <summary>
-        /// Connected.
+        /// Initializes a new instance of the <see cref="Client"/> class.
         /// </summary>
-        public bool Connected { get; private set; }
-
-        /// <summary>
-        /// Connected.
-        /// </summary>
-        public bool Authenticated { get; private set; }
+        /// <param name="ip">IP address of the Harmony.</param>
+        /// <param name="username">Logitech username.</param>
+        /// <param name="password">Logitech password.</param>
+        /// <param name="bypassLogitech">if <c>false</c> use Logitech auth, otherwise bypass Logitech auth.</param>
+        public Client(string ip, string username, string password, bool bypassLogitech = false)
+        {
+            _ip = ip;
+            _username = username;
+            _password = password;
+            _bypassLogitech = bypassLogitech;
+        }
 
         /// <summary>
         /// The event that is raised when CurrentActivity is updated.
         /// </summary>
-        public event EventHandler<int> CurrentActivityUpdated;
+        public event EventHandler<ActivityUpdatedEventArgs> CurrentActivityUpdated;
 
         /// <summary>
         /// The event that is raised when an unrecoverable error condition occurs.
@@ -73,30 +89,21 @@ namespace HarmonyHub
         public event EventHandler<MessageSentEventArgs> MessageSent;
 
         /// <summary>
-        /// Constructor.
+        /// Connected.
         /// </summary>
-        /// <param name="ip"></param>
-        public Client(string ip) : this(ip, null, null, true) { }
+        public bool Connected { get; private set; }
 
         /// <summary>
-        /// Constructor.
+        /// Connected.
         /// </summary>
-        /// <param name="ip"></param>
-        /// <param name="username"></param>
-        /// <param name="password"></param>
-        public Client(string ip, string username, string password, bool bypassLogitech = false)
-        {
-            _ip = ip;
-            _username = username;
-            _password = password;
-            _bypassLogitech = bypassLogitech;
-        }
+        public bool Authenticated { get; private set; }
 
         #region Requests
 
         /// <summary>
         /// Gets the current Harmony configuration.
         /// </summary>
+        /// <returns>>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task<HarmonyConfig> GetConfigAsync()
         {
             var xml = Xml.Element("iq")
@@ -108,7 +115,7 @@ namespace HarmonyHub
             var result = await RequestResponseAsync(xml).ConfigureAwait(false);
 
             // Validate
-            if (result.Name == "iq" && result.HasChildNodes && result.FirstChild.Name == "oa" && 
+            if (result.Name == "iq" && result.HasChildNodes && result.FirstChild.Name == "oa" &&
                 result.FirstChild.Attributes["mime"] != null && result.FirstChild.Attributes["mime"].Value == HarmonyMimeTypes.Config)
             {
                 return JsonSerializer<HarmonyConfig>.Deserialize(result.FirstChild.InnerText);
@@ -120,6 +127,7 @@ namespace HarmonyHub
         /// <summary>
         /// Send message to HarmonyHub to request current activity.
         /// </summary>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task<int> GetCurrentActivityIdAsync()
         {
             var xml = Xml.Element("iq")
@@ -151,6 +159,8 @@ namespace HarmonyHub
         /// <summary>
         /// Send command to the HarmonyHub.
         /// </summary>
+        /// <param name="command">Command to send.</param>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task SendCommandAsync(string command)
         {
             var xml = Xml.Element("iq")
@@ -170,6 +180,7 @@ namespace HarmonyHub
         /// Send "-1" to trigger turning off.
         /// </remarks>
         /// <param name="activityId">The id of the activity to activate.</param>
+        /// <returns>>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task StartActivityAsync(int activityId)
         {
             var xml = Xml.Element("iq")
@@ -177,7 +188,7 @@ namespace HarmonyHub
                 .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", HarmonyMimeTypes.StartActivity)
-                    .Text(string.Format("activityId={0}:timestamp={1}", activityId, (DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds)));
+                    .Text(string.Format("activityId={0}:timestamp={1}", activityId, DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds)));
 
             await RequestResponseAsync(xml).ConfigureAwait(false);
         }
@@ -185,6 +196,7 @@ namespace HarmonyHub
         /// <summary>
         /// Sends a ping to HarmonyHub to keep connection alive.
         /// </summary>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task SendPingAsync()
         {
             var xml = Xml.Element("iq")
@@ -218,20 +230,22 @@ namespace HarmonyHub
                         {
                             var oaNode = elem.FirstChild;
                             if (oaNode != null && oaNode.Name == "oa")
-                            switch (oaNode.Attributes["errorcode"].Value)
                             {
-                                case "200":
-                                    resultTaskCompletionSource.TrySetResult(elem);
-                                    _resultTaskCompletionSources.Remove(messageId);
-                                    break;
-                                case "100":
-                                    // Ignore continuation messages
-                                    break;
-                                default:
-                                    var errorMessage = oaNode.Attributes["errorstring"].Value;
-                                    resultTaskCompletionSource.TrySetException(new Exception(errorMessage));
-                                    _resultTaskCompletionSources.Remove(messageId);
-                                    break;
+                                switch (oaNode.Attributes["errorcode"].Value)
+                                {
+                                    case "200":
+                                        resultTaskCompletionSource.TrySetResult(elem);
+                                        _resultTaskCompletionSources.Remove(messageId);
+                                        break;
+                                    case "100":
+                                        // Ignore continuation messages
+                                        break;
+                                    default:
+                                        var errorMessage = oaNode.Attributes["errorstring"].Value;
+                                        resultTaskCompletionSource.TrySetException(new Exception(errorMessage));
+                                        _resultTaskCompletionSources.Remove(messageId);
+                                        break;
+                                }
                             }
                         }
                     }
@@ -252,16 +266,17 @@ namespace HarmonyHub
                                             int id;
                                             if (int.TryParse(startActivityIdParts[1], out id))
                                             {
-                                                CurrentActivityUpdated?.Invoke(this, id);
+                                                CurrentActivityUpdated?.Invoke(this, new ActivityUpdatedEventArgs(id));
                                             }
                                         }
                                     }
+
                                     break;
                                 case HarmonyEventTypes.StateDigest:
                                     // TODO: What to do with this?
                                     // It seems that these are purely informational, currently comments out to avoid the serialization hit
                                     // but left in, for the case that this becomes useful later on
-                                    //var notify = JsonSerializer<HarmonyNotify>.Deserialize(eventNode.InnerText);
+                                    // var notify = JsonSerializer<HarmonyNotify>.Deserialize(eventNode.InnerText);
                                     break;
                             }
                         }
@@ -276,7 +291,7 @@ namespace HarmonyHub
                     Authenticated = false;
                     Connected = false;
                 }
-                
+
                 // An exception outside of Dispose should be raised to the caller to handle
                 if (!_disposed)
                 {
@@ -290,7 +305,7 @@ namespace HarmonyHub
         /// </summary>
         /// <param name="message">The message to be sent.</param>
         /// <param name="timeout">Time to wait for an error response.</param>
-        /// <returns>A <see cref="cref="Task"/>.</returns>
+        /// <returns>A <see cref="Task"/>.</returns>
         private async Task FireAndForgetAsync(XmlElement message, int timeout = 50)
         {
             // Heartbeat check
@@ -467,11 +482,11 @@ namespace HarmonyHub
         }
 
         /// <summary>
-        /// Heartbeat ping. Failure will result in the heartbeat being stopped, which will 
+        /// Heartbeat ping. Failure will result in the heartbeat being stopped, which will
         /// make any future calls throw an exception as the heartbeat indicator will be disabled.
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+        /// <param name="sender">Sender of event.</param>
+        /// <param name="e">Event parameters.</param>
         private async void HeatbeatAsync(object sender, ElapsedEventArgs e)
         {
             try
@@ -565,12 +580,13 @@ namespace HarmonyHub
         /// <param name="ip">IP address of the Harmony Hub.</param>
         /// <param name="username">Username.</param>
         /// <param name="password">Passwprd.</param>
+        /// <param name="bypassLogitech">if <c>false</c> use Logitech auth, otherwise bypass Logitech auth.</param>
         /// <returns>Harmony session token.</returns>
         private string GetSessionToken(string ip, string username, string password, bool bypassLogitech)
         {
-            var sessionToken = "";
+            var sessionToken = string.Empty;
 
-            var authToken = ""; ;
+            var authToken = string.Empty;
             if (!bypassLogitech)
             {
                 // Authenticate to Logitech
@@ -680,7 +696,6 @@ namespace HarmonyHub
         /// </summary>
         /// <param name="ip">IP address of the Harmony Hub.</param>
         /// <param name="sessionToken">HarmonyHub session token.</param>
-        /// <returns>Harmony session token.</returns>
         private void LoginToHarmony(string ip, string sessionToken)
         {
             // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>Base64EncodedValue</auth>
@@ -708,7 +723,7 @@ namespace HarmonyHub
         /// <param name="username">Username to authenticate with.</param>
         /// <param name="password">Password to authenticate with.</param>
         /// <returns>Logitech auth token.</returns>
-        private static string LoginToLogitech(string username, string password)
+        private string LoginToLogitech(string username, string password)
         {
             const string logitechAuthUrl = "https://svcs.myharmony.com/CompositeSecurityServices/Security.svc/json/GetUserAuthToken";
 
@@ -752,12 +767,12 @@ namespace HarmonyHub
         }
 
         /// <summary>
-		/// Releases all resources used by the current instance of the XmppIm
-		/// class, optionally disposing of managed resource.
-		/// </summary>
-		/// <param name="disposing">true to dispose of managed resources, otherwise
-		/// false.</param>
-		protected virtual void Dispose(bool disposing)
+        /// Releases all resources used by the current instance of the XmppIm
+        /// class, optionally disposing of managed resource.
+        /// </summary>
+        /// <param name="disposing">true to dispose of managed resources, otherwise
+        /// false.</param>
+        protected virtual void Dispose(bool disposing)
         {
             if (!_disposed)
             {
@@ -768,6 +783,7 @@ namespace HarmonyHub
                 if (disposing)
                 {
                     Close();
+                    _cancellationTokenSource.Dispose();
                 }
             }
         }

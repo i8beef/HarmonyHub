@@ -77,25 +77,26 @@ namespace HarmonyHub
         /// <param name="leaveOpen">true to leave the tag of an empty element
         /// open, otherwise false.</param>
         /// <returns>A textual representation of the XmlElement instance.</returns>
-        public static string ToXmlString(this XmlElement e, bool xmlDeclaration = false,
-            bool leaveOpen = false)
+        public static string ToXmlString(this XmlElement e, bool xmlDeclaration = false, bool leaveOpen = false)
         {
             // Can't use e.OuterXml because it "messes up" namespaces for elements with
             // a prefix, i.e. stream:stream (What it does is probably correct, but just
             // not what we need for XMPP).
             StringBuilder b = new StringBuilder("<" + e.Name);
-            if (!String.IsNullOrEmpty(e.NamespaceURI))
+            if (!string.IsNullOrEmpty(e.NamespaceURI))
                 b.Append(" xmlns='" + e.NamespaceURI + "'");
             foreach (XmlAttribute a in e.Attributes)
             {
                 if (a.Name == "xmlns")
                     continue;
                 if (a.Value != null)
-                    b.Append(" " + a.Name + "='" + SecurityElement.Escape(a.Value.ToString())
-                        + "'");
+                    b.Append(" " + a.Name + "='" + SecurityElement.Escape(a.Value.ToString()) + "'");
             }
+
             if (e.IsEmpty)
+            {
                 b.Append("/>");
+            }
             else
             {
                 b.Append(">");
@@ -106,9 +107,11 @@ namespace HarmonyHub
                     else if (child is XmlText)
                         b.Append(((XmlText)child).InnerText);
                 }
+
                 b.Append("</" + e.Name + ">");
             }
-            string xml = b.ToString();
+
+            var xml = b.ToString();
             if (xmlDeclaration)
                 xml = "<?xml version='1.0' encoding='UTF-8'?>" + xml;
             if (leaveOpen)

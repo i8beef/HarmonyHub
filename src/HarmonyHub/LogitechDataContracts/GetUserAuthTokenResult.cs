@@ -9,17 +9,16 @@ namespace HarmonyHub.LogitechDataContracts
     [DataContract]
     internal class GetUserAuthTokenResult
     {
+        /// <summary>
+        /// Account ID.
+        /// </summary>
         [DataMember(Name = "AccountId")]
         public int AccountId { get; set; }
 
+        /// <summary>
+        /// Auth token.
+        /// </summary>
         [DataMember(Name = "UserAuthToken")]
         public string UserAuthToken { get; set; }
-    }
-
-    [DataContract]
-    internal class GetUserAuthTokenResultRootObject
-    {
-        [DataMember(Name = "GetUserAuthTokenResult")]
-        public GetUserAuthTokenResult GetUserAuthTokenResult { get; set; }
     }
 }
