@@ -49,9 +49,6 @@
     <Compile Include="Xml.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="SafeSettings.config">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
