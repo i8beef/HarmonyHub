@@ -23,7 +23,7 @@ namespace HarmonyHub.TestClient
             string password = ConfigurationManager.AppSettings["password"];
             string ip = ConfigurationManager.AppSettings["ip"];
 
-            using (var client = new Client(ip, username, password, true))
+            using (var client = new Client(ip, username, password, 2000, true))
             {
                 // Setup event handlers
                 client.MessageSent += (o, e) => { Debug.WriteLine(e.Message); };

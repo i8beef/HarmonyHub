@@ -43,6 +43,7 @@ namespace HarmonyHub
         private string _sessionToken;
         private string _clientId;
         private int _messageId = 1;
+        private int _commandTimeout;
 
         private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
@@ -51,7 +52,7 @@ namespace HarmonyHub
         /// </summary>
         /// <param name="ip">IP address of the Harmony.</param>
         public Client(string ip)
-            : this(ip, null, null, true) { }
+            : this(ip, null, null, 2000, true) { }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Client"/> class.
@@ -59,12 +60,14 @@ namespace HarmonyHub
         /// <param name="ip">IP address of the Harmony.</param>
         /// <param name="username">Logitech username.</param>
         /// <param name="password">Logitech password.</param>
+        /// <param name="commandTimeout">Timeout value for commands.</param>
         /// <param name="bypassLogitech">if <c>false</c> use Logitech auth, otherwise bypass Logitech auth.</param>
-        public Client(string ip, string username, string password, bool bypassLogitech = false)
+        public Client(string ip, string username, string password, int commandTimeout = 2000, bool bypassLogitech = false)
         {
             _ip = ip;
             _username = username;
             _password = password;
+            _commandTimeout = commandTimeout;
             _bypassLogitech = bypassLogitech;
         }
 
@@ -112,7 +115,7 @@ namespace HarmonyHub
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", HarmonyMimeTypes.Config));
 
-            var result = await RequestResponseAsync(xml).ConfigureAwait(false);
+            var result = await RequestResponseAsync(xml, _commandTimeout).ConfigureAwait(false);
 
             // Validate
             if (result.Name == "iq" && result.HasChildNodes && result.FirstChild.Name == "oa" &&
@@ -136,7 +139,7 @@ namespace HarmonyHub
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", HarmonyMimeTypes.CurrentActivity));
 
-            var result = await RequestResponseAsync(xml).ConfigureAwait(false);
+            var result = await RequestResponseAsync(xml, _commandTimeout).ConfigureAwait(false);
 
             // Validate
             if (result.Name == "iq" && result.HasChildNodes && result.FirstChild.Name == "oa" &&
@@ -190,7 +193,7 @@ namespace HarmonyHub
                     .Attr("mime", HarmonyMimeTypes.StartActivity)
                     .Text(string.Format("activityId={0}:timestamp={1}", activityId, DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds)));
 
-            await RequestResponseAsync(xml).ConfigureAwait(false);
+            await RequestResponseAsync(xml, _commandTimeout).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -205,7 +208,7 @@ namespace HarmonyHub
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", HarmonyMimeTypes.Ping));
 
-            await RequestResponseAsync(xml).ConfigureAwait(false);
+            await RequestResponseAsync(xml, _commandTimeout).ConfigureAwait(false);
         }
 
         /// <summary>
