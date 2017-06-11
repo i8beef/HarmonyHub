@@ -58,7 +58,6 @@
     <Compile Include="Config\FunctionConfigElement.cs" />
     <Compile Include="Config\GlobalConfigElement.cs" />
     <Compile Include="Config\ControlGroupConfigElement.cs" />
-    <Compile Include="Config\RuleConfigElement.cs" />
     <Compile Include="Config\DeviceConfigElement.cs" />
     <Compile Include="Config\SequenceConfigElement.cs" />
     <Compile Include="Events\ActivityUpdatedEventArgs.cs" />
