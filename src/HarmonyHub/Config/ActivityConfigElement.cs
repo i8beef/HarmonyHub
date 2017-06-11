@@ -17,7 +17,7 @@ namespace HarmonyHub.Config
             ControlGroup = new List<ControlGroupConfigElement>();
             Sequences = new List<string>();
             Fixit = new Dictionary<int, FixitConfigElement>();
-            Rules = new List<RuleConfigElement>();
+            Rules = new List<string>();
         }
 
         /// <summary>
@@ -72,7 +72,7 @@ namespace HarmonyHub.Config
         /// Activity rules.
         /// </summary>
         [DataMember(Name = "rules")]
-        public IList<RuleConfigElement> Rules { get; set; }
+        public IList<string> Rules { get; set; }
 
         /// <summary>
         /// Icon for activity.
