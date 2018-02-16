@@ -163,17 +163,38 @@ namespace HarmonyHub
         /// Send command to the HarmonyHub.
         /// </summary>
         /// <param name="command">Command to send.</param>
+        /// <param name="press">Represents a press or a release.</param>
+        /// <param name="timestamp">Timestamp which harmony uses to order requests.</param>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-        public async Task SendCommandAsync(string command)
+        public async Task SendCommandAsync(string command, bool press = true, int? timestamp = null)
         {
+            var text = new StringBuilder();
+            text.Append("action=").Append(command.Replace(":", "::"));
+            text.Append(":").Append("status=").Append(press ? "press" : "release");
+            if (timestamp.HasValue)
+                text.Append(":").Append("timestamp=").Append(timestamp.Value);
+
             var xml = Xml.Element("iq")
                 .Attr("type", "get")
                 .Attr("id", _clientId + "_" + _messageId.ToString())
                 .Child(Xml.Element("oa", "connect.logitech.com")
                     .Attr("mime", HarmonyMimeTypes.DeviceCommand)
-                    .Text("action=" + command.Replace(":", "::") + ":status=press"));
+                    .Text(text.ToString()));
 
             await FireAndForgetAsync(xml).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Send a key press event (press and release combo).
+        /// </summary>
+        /// <param name="command">Command to send.</param>
+        /// <param name="timespan">The time between the press and release, default 100ms</param>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        public async Task SendKeyPressAsync(string command, int timespan = 100)
+        {
+            var now = (int)DateTime.Now.ToUniversalTime().Subtract(new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
+            await SendCommandAsync(command, true, now - timespan);
+            await SendCommandAsync(command, false, timespan);
         }
 
         /// <summary>
