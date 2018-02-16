@@ -1,11 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio 15
+VisualStudioVersion = 15.0.27130.2010
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HarmonyHub", "HarmonyHub\HarmonyHub.csproj", "{343C20BE-1027-4EE6-B352-7B525F836196}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HarmonyHub", "HarmonyHub\HarmonyHub.csproj", "{A3EEB58F-FEA2-4808-A80B-1144F300DC32}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HarmonyHub.TestClient", "HarmonyHub.TestClient\HarmonyHub.TestClient.csproj", "{7423A407-4ADA-4775-BD70-5E138CD6C9A4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HarmonyHub.TestClient", "HarmonyHub.TestClient\HarmonyHub.TestClient.csproj", "{2E1E4B71-3895-4E17-BD97-1C0F26487048}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,16 +13,19 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{343C20BE-1027-4EE6-B352-7B525F836196}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{343C20BE-1027-4EE6-B352-7B525F836196}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{343C20BE-1027-4EE6-B352-7B525F836196}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{343C20BE-1027-4EE6-B352-7B525F836196}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7423A407-4ADA-4775-BD70-5E138CD6C9A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7423A407-4ADA-4775-BD70-5E138CD6C9A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7423A407-4ADA-4775-BD70-5E138CD6C9A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7423A407-4ADA-4775-BD70-5E138CD6C9A4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A3EEB58F-FEA2-4808-A80B-1144F300DC32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3EEB58F-FEA2-4808-A80B-1144F300DC32}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3EEB58F-FEA2-4808-A80B-1144F300DC32}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3EEB58F-FEA2-4808-A80B-1144F300DC32}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E1E4B71-3895-4E17-BD97-1C0F26487048}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E1E4B71-3895-4E17-BD97-1C0F26487048}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E1E4B71-3895-4E17-BD97-1C0F26487048}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E1E4B71-3895-4E17-BD97-1C0F26487048}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {861D3447-5875-4473-9480-1F0A81FCA12D}
 	EndGlobalSection
 EndGlobal
