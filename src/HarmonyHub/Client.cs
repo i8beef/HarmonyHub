@@ -281,18 +281,13 @@ namespace HarmonyHub
                             switch (eventNode.Attributes["type"].Value)
                             {
                                 case HarmonyEventTypes.StartActivityFinished:
-                                    var startActivityParts = eventNode.InnerText.Split(':');
-                                    if (startActivityParts.Length == 3)
+                                    var messageParams = eventNode.InnerText.ToParamDictionary();
+
+                                    // Find the activityId
+                                    int activityId;
+                                    if (int.TryParse(messageParams["activityId"], out activityId))
                                     {
-                                        var startActivityIdParts = startActivityParts[0].Split('=');
-                                        if (startActivityIdParts.Length == 2)
-                                        {
-                                            int id;
-                                            if (int.TryParse(startActivityIdParts[1], out id))
-                                            {
-                                                CurrentActivityUpdated?.Invoke(this, new ActivityUpdatedEventArgs(id));
-                                            }
-                                        }
+                                        CurrentActivityUpdated?.Invoke(this, new ActivityUpdatedEventArgs(activityId));
                                     }
 
                                     break;
