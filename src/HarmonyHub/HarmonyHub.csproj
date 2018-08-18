@@ -28,7 +28,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="I8Beef.CodeAnalysis.RuleSet" Version="1.0.11">
+    <PackageReference Include="I8Beef.CodeAnalysis.RuleSet" Version="1.0.15">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
