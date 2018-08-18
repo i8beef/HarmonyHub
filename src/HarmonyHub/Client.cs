@@ -18,10 +18,8 @@ using HarmonyHub.LogitechDataContracts;
 
 namespace HarmonyHub
 {
-    /// <summary>
-    /// Harmony Hub client implementation.
-    /// </summary>
-    public class Client : IDisposable
+    /// <inheritdoc />
+    public class Client : IClient
     {
         private readonly object _writeLock = new object();
 
@@ -71,42 +69,27 @@ namespace HarmonyHub
             _bypassLogitech = bypassLogitech;
         }
 
-        /// <summary>
-        /// The event that is raised when CurrentActivity is updated.
-        /// </summary>
+        /// <inheritdoc />
         public event EventHandler<ActivityUpdatedEventArgs> CurrentActivityUpdated;
 
-        /// <summary>
-        /// The event that is raised when an unrecoverable error condition occurs.
-        /// </summary>
+        /// <inheritdoc />
         public event EventHandler<ErrorEventArgs> Error;
 
-        /// <summary>
-        /// The event that is raised when messages are received.
-        /// </summary>
+        /// <inheritdoc />
         public event EventHandler<MessageReceivedEventArgs> MessageReceived;
 
-        /// <summary>
-        /// The event that is raised when messages are sent.
-        /// </summary>
+        /// <inheritdoc />
         public event EventHandler<MessageSentEventArgs> MessageSent;
 
-        /// <summary>
-        /// Connected.
-        /// </summary>
+        /// <inheritdoc />
         public bool Connected { get; private set; }
 
-        /// <summary>
-        /// Connected.
-        /// </summary>
+        /// <inheritdoc />
         public bool Authenticated { get; private set; }
 
         #region Requests
 
-        /// <summary>
-        /// Gets the current Harmony configuration.
-        /// </summary>
-        /// <returns>>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        /// <inheritdoc />
         public async Task<HarmonyConfig> GetConfigAsync()
         {
             var xml = Xml.Element("iq")
@@ -127,10 +110,7 @@ namespace HarmonyHub
             throw new UnrecognizedMessageException("Response message was not in the correct format");
         }
 
-        /// <summary>
-        /// Send message to HarmonyHub to request current activity.
-        /// </summary>
-        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        /// <inheritdoc />
         public async Task<int> GetCurrentActivityIdAsync()
         {
             var xml = Xml.Element("iq")
@@ -159,13 +139,7 @@ namespace HarmonyHub
             throw new UnrecognizedMessageException("Response message was not in the correct format");
         }
 
-        /// <summary>
-        /// Send command to the HarmonyHub.
-        /// </summary>
-        /// <param name="command">Command to send.</param>
-        /// <param name="press">Represents a press or a release.</param>
-        /// <param name="timestamp">Timestamp which harmony uses to order requests.</param>
-        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        /// <inheritdoc />
         public async Task SendCommandAsync(string command, bool press = true, int? timestamp = null)
         {
             var text = new StringBuilder();
@@ -184,12 +158,7 @@ namespace HarmonyHub
             await FireAndForgetAsync(xml).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// Send a key press event (press and release combo).
-        /// </summary>
-        /// <param name="command">Command to send.</param>
-        /// <param name="timespan">The time between the press and release, default 100ms</param>
-        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        /// <inheritdoc />
         public async Task SendKeyPressAsync(string command, int timespan = 100)
         {
             var now = (int)DateTime.Now.ToUniversalTime().Subtract(new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
@@ -197,14 +166,7 @@ namespace HarmonyHub
             await SendCommandAsync(command, false, timespan);
         }
 
-        /// <summary>
-        /// Send message to HarmonyHub to start a given activity
-        /// </summary>
-        /// <remarks>
-        /// Send "-1" to trigger turning off.
-        /// </remarks>
-        /// <param name="activityId">The id of the activity to activate.</param>
-        /// <returns>>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        /// <inheritdoc />
         public async Task StartActivityAsync(int activityId)
         {
             var xml = Xml.Element("iq")
@@ -217,10 +179,7 @@ namespace HarmonyHub
             await RequestResponseAsync(xml, _commandTimeout).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// Sends a ping to HarmonyHub to keep connection alive.
-        /// </summary>
-        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        /// <inheritdoc />
         public async Task SendPingAsync()
         {
             var xml = Xml.Element("iq")
@@ -438,9 +397,7 @@ namespace HarmonyHub
 
         #region Client Init and Close
 
-        /// <summary>
-        /// Connect to HarmonyHub.
-        /// </summary>
+        /// <inheritdoc />
         public void Connect()
         {
             // Establish a connection
@@ -566,9 +523,7 @@ namespace HarmonyHub
             }
         }
 
-        /// <summary>
-        /// Allows for explicit closing of session.
-        /// </summary>
+        /// <inheritdoc />
         public void Close()
         {
             // Close the Harmony stream
@@ -776,9 +731,7 @@ namespace HarmonyHub
 
         #region IDisposable implementation
 
-        /// <summary>
-        /// Releases all resources used by the current instance of the XmppIm class.
-        /// </summary>
+        /// <inheritdoc />
         public void Dispose()
         {
             Dispose(true);
