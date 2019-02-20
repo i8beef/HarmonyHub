@@ -638,7 +638,7 @@ namespace HarmonyHub
                                 {
                                     if (ret.FirstChild.InnerXml.Contains("status=succeeded"))
                                     {
-                                        const string identityRegEx = "identity=([A-Z0-9]{8}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{12}):status";
+                                        const string identityRegEx = "identity=([a-fA-F0-9]+):status";
                                         var regex = new Regex(identityRegEx, RegexOptions.IgnoreCase | RegexOptions.Singleline);
                                         var match = regex.Match(ret.FirstChild.InnerXml);
                                         if (match.Success)
