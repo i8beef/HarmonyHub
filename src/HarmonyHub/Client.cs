@@ -22,16 +22,18 @@ namespace HarmonyHub
     public class Client : IClient
     {
         private readonly object _writeLock = new object();
+        private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
         // A lookup to correlate request and responses
         private readonly IDictionary<string, TaskCompletionSource<XmlElement>> _resultTaskCompletionSources = new ConcurrentDictionary<string, TaskCompletionSource<XmlElement>>();
 
-        private bool _disposed;
+        private readonly string _ip;
+        private readonly string _username;
+        private readonly string _password;
+        private readonly bool _bypassLogitech;
+        private readonly int _commandTimeout;
 
-        private string _ip;
-        private string _username;
-        private string _password;
-        private bool _bypassLogitech;
+        private bool _disposed;
 
         private TcpClient _client;
         private NetworkStream _stream;
@@ -41,9 +43,6 @@ namespace HarmonyHub
         private string _sessionToken;
         private string _clientId;
         private int _messageId = 1;
-        private int _commandTimeout;
-
-        private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Client"/> class.
@@ -128,8 +127,7 @@ namespace HarmonyHub
                 var currentActivityParts = result.FirstChild.InnerText.Split('=');
                 if (currentActivityParts.Length == 2)
                 {
-                    int id;
-                    if (int.TryParse(currentActivityParts[1], out id))
+                    if (int.TryParse(currentActivityParts[1], out int id))
                     {
                         return id;
                     }
@@ -162,8 +160,8 @@ namespace HarmonyHub
         public async Task SendKeyPressAsync(string command, int timespan = 100)
         {
             var now = (int)DateTime.Now.ToUniversalTime().Subtract(new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
-            await SendCommandAsync(command, true, now - timespan);
-            await SendCommandAsync(command, false, timespan);
+            await SendCommandAsync(command, true, now - timespan).ConfigureAwait(false);
+            await SendCommandAsync(command, false, timespan).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -208,8 +206,7 @@ namespace HarmonyHub
                     if (elem.Name == "iq" && elem.HasChildNodes)
                     {
                         var messageId = elem.Attributes["id"].Value;
-                        TaskCompletionSource<XmlElement> resultTaskCompletionSource;
-                        if (messageId != null && _resultTaskCompletionSources.TryGetValue(messageId, out resultTaskCompletionSource))
+                        if (messageId != null && _resultTaskCompletionSources.TryGetValue(messageId, out TaskCompletionSource<XmlElement> resultTaskCompletionSource))
                         {
                             var oaNode = elem.FirstChild;
                             if (oaNode != null && oaNode.Name == "oa")
@@ -306,7 +303,7 @@ namespace HarmonyHub
             _resultTaskCompletionSources.Remove(messageId);
 
             // This makes sure the exception, if there was one, is unwrapped
-            await task;
+            await task.ConfigureAwait(false);
         }
 
         /// <summary>
@@ -492,7 +489,7 @@ namespace HarmonyHub
             }
 
             // Login with session token
-            LoginToHarmony(_ip, _sessionToken);
+            LoginToHarmony(_sessionToken);
             Authenticated = true;
         }
 
@@ -668,9 +665,8 @@ namespace HarmonyHub
         /// <summary>
         /// Logs into Harmony device with the supplied session token.
         /// </summary>
-        /// <param name="ip">IP address of the Harmony Hub.</param>
         /// <param name="sessionToken">HarmonyHub session token.</param>
-        private void LoginToHarmony(string ip, string sessionToken)
+        private void LoginToHarmony(string sessionToken)
         {
             // <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>Base64EncodedValue</auth>
             var saslXml = Xml.Element("auth", "urn:ietf:params:xml:ns:xmpp-sasl")
