@@ -162,6 +162,9 @@ namespace HarmonyHub
                         throw new XmlException("Unexpected node: " + _reader.Name);
                 }
             }
+
+            // If we got this far, the stream failed to establish
+            throw new Exception("Failed to read root node");
         }
 
         #region IDisposable interface implementation

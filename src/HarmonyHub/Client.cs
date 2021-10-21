@@ -320,7 +320,7 @@ namespace HarmonyHub
 
             var messageId = message.Attributes["id"].Value;
 
-            // Prepate the TaskCompletionSource, which is used to await the result
+            // Prepare the TaskCompletionSource, which is used to await the result
             var resultTaskCompletionSource = new TaskCompletionSource<XmlElement>();
             _resultTaskCompletionSources[messageId] = resultTaskCompletionSource;
 
